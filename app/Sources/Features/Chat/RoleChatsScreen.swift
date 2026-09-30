@@ -602,6 +602,16 @@ private struct CreateRoleChatScreen: View {
 /// `.sheet(item:)` требует `Identifiable` — `String` сам по себе не годится.
 private struct RoomTaskRef: Identifiable { let id: String }
 
+/// Своё сообщение, которое уже видно в ленте, но сервер его ещё не принял
+/// (или не принял совсем — `failed`). Как в мессенджерах: пузырь появляется
+/// сразу по нажатию «Отправить», без ожидания сети.
+private struct PendingOutgoing: Identifiable, Equatable {
+    let id: String
+    let text: String
+    let attachments: [ApiChatAttachment]
+    var failed = false
+}
+
 private struct RoleChatRoomScreen: View {
     @Environment(SessionStore.self) private var session
     @Environment(TaskStore.self) private var taskStore
@@ -650,9 +660,10 @@ private struct RoleChatRoomScreen: View {
     /// Идущие ходы ролей (userId → снимок): текст по словам и шаги
     /// (`chats:live`, 27.09.2026). Рисуются и в группах.
     @State private var liveTurns: [String: RoleChatLiveTurn] = [:]
-    /// На переходе к сохранённому ответу оставляем живой ход на мгновение,
-    /// чтобы клиент успел выпустить остаток очереди без дублирования текста.
-    @State private var finishingLiveTurnMessageIDs: [String: Set<String>] = [:]
+    /// Свои сообщения в пути: видны сразу, до ответа сервера.
+    @State private var pendingOutgoing: [PendingOutgoing] = []
+    /// Идёт запрос «Остановить» — кнопка не жмётся дважды.
+    @State private var isStopping = false
     /// Автопрокрутка работает, пока владелец читает конец ленты. Ручной
     /// скролл отключает её до возвращения к низу.
     @State private var followsChatBottom = true
@@ -851,8 +862,11 @@ private struct RoleChatRoomScreen: View {
             let chatID = chat.id
             realtime.onEvent = { event in
                 switch event {
-                case .roleChatMessage(let id) where id == chatID:
-                    Task { await refresh() }
+                case .roleChatMessage(let id, let message) where id == chatID:
+                    // Сервер прислал готовое сообщение — вставляем его сразу,
+                    // без перечитывания ленты (01.10.2026: пузырь ответа
+                    // появлялся с задержкой и лента вздрагивала).
+                    if let message { insertIncoming(message) } else { Task { await refresh() } }
                 case .roleChatTyping(let id, let userID, let name, let active, let tool) where id == chatID:
                     if active {
                         typists[userID] = name.isEmpty ? "Участник" : name
@@ -861,21 +875,23 @@ private struct RoleChatRoomScreen: View {
                         typists[userID] = nil
                         typistTools[userID] = nil
                     }
-                case .roleChatLive(let id, let userID, let turn) where id == chatID:
+                case .roleChatLive(let id, let userID, let turn, let messageID) where id == chatID:
                     if let turn {
-                        finishingLiveTurnMessageIDs[userID] = nil
                         liveTurns[userID] = turn
+                    } else if let messageID, messages.contains(where: { $0.id == messageID }) {
+                        // Готовый ответ уже в ленте (сервер шлёт chat:new
+                        // раньше конца хода) — живой пузырь уходит тем же кадром.
+                        withAnimation(.snappy(duration: 0.25)) { liveTurns[userID] = nil }
                     } else {
+                        // Ответа в ленте ещё нет (ход без ответа, потерянный
+                        // chat:new или старый сервер): сначала дочитываем
+                        // ленту и только потом убираем живой пузырь — без
+                        // мгновения пустоты между ними.
                         let finishedStart = liveTurns[userID]?.startedAt
-                        finishingLiveTurnMessageIDs[userID] = Set(messages.map(\.id))
                         Task {
                             await refresh()
-                            // Последний пакет сервера может ещё лежать в
-                            // очереди; готовый ответ покажем после её дренажа.
-                            try? await Task.sleep(for: .milliseconds(700))
                             guard liveTurns[userID]?.startedAt == finishedStart else { return }
-                            liveTurns[userID] = nil
-                            finishingLiveTurnMessageIDs[userID] = nil
+                            withAnimation(.snappy(duration: 0.25)) { liveTurns[userID] = nil }
                         }
                     }
                 default:
@@ -898,9 +914,11 @@ private struct RoleChatRoomScreen: View {
         .onDisappear { realtime.disconnect() }
         .task {
             // Опрос остаётся запасным путём на случай, если сокет молчит.
+            // Готовые сообщения приходят по сокету целиком, поэтому часто
+            // перечитывать всю ленту незачем.
             await refresh()
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(4))
+                try? await Task.sleep(for: .seconds(10))
                 if !Task.isCancelled { await refresh() }
             }
         }
@@ -983,6 +1001,10 @@ private struct RoleChatRoomScreen: View {
                     if !isSelecting, let replies = lastQuickReplies {
                         quickReplyRow(replies)
                     }
+                    ForEach(pendingOutgoing) { pending in
+                        pendingOutgoingRow(pending)
+                            .id(pending.id)
+                    }
                     ForEach(pendingVoices) { message in
                         VStack(alignment: .trailing, spacing: 4) {
                             // Ещё не отправленное голосовое: имя и иконка
@@ -1005,6 +1027,9 @@ private struct RoleChatRoomScreen: View {
                     }
                     ForEach(visibleLiveTurns, id: \.userID) { turn in
                         liveTurnRow(turn)
+                    }
+                    if !isSelecting && (!visibleLiveTurns.isEmpty || !typists.isEmpty) {
+                        stopTurnButton
                     }
                     if !visibleTypists.isEmpty {
                         if chat.kind != "group", let onlyUserID = visibleTypists.keys.first,
@@ -1069,14 +1094,106 @@ private struct RoleChatRoomScreen: View {
             .sorted { $0.userID < $1.userID }
     }
 
-    private var visibleMessages: [RoleChatMessage] {
-        messages.filter { message in
-            guard let userID = message.fromUserID,
-                  let precedingIDs = finishingLiveTurnMessageIDs[userID] else {
-                return true
+    private var visibleMessages: [RoleChatMessage] { messages }
+
+    /// Вставить сообщение из сокета: новое — в конец, известное — заменить.
+    /// Живой пузырь автора уходит тем же кадром, что появляется готовый, —
+    /// лента не прыгает. Свой пузырь «в пути» с тем же текстом тоже уходит:
+    /// сервер его принял.
+    private func insertIncoming(_ message: RoleChatMessage) {
+        let mine = message.fromUserID == session.currentUser?.id
+        withAnimation(.snappy(duration: 0.25)) {
+            if let index = messages.firstIndex(where: { $0.id == message.id }) {
+                messages[index] = message
+            } else {
+                messages.append(message)
             }
-            return precedingIDs.contains(message.id)
+            if let author = message.fromUserID, !mine {
+                liveTurns[author] = nil
+                typists[author] = nil
+                typistTools[author] = nil
+            }
+            if mine, let index = pendingOutgoing.firstIndex(where: { !$0.failed && $0.text == message.text }) {
+                pendingOutgoing.remove(at: index)
+            }
         }
+        if !mine && message.id != markedReadMessageID {
+            let id = message.id
+            Task {
+                if (try? await api.markRoleChatRead(id: chat.id)) != nil { markedReadMessageID = id }
+            }
+        }
+    }
+
+    /// Своё сообщение в пути: тот же пузырь, что у отправленного, но
+    /// приглушён; не ушло — подпись и «Повторить».
+    private func pendingOutgoingRow(_ pending: PendingOutgoing) -> some View {
+        VStack(alignment: .trailing, spacing: TFSpacing.xs) {
+            // Выбор и удаление для него не имеют смысла — на сервере его нет.
+            messageBubbleRow(pendingMessage(pending))
+                .allowsHitTesting(false)
+                .opacity(pending.failed ? 1 : 0.6)
+            if pending.failed {
+                HStack(spacing: TFSpacing.sm) {
+                    Label("Не отправлено", systemImage: "exclamationmark.circle")
+                        .foregroundStyle(Color.tfRed)
+                    Button("Повторить") { Task { await deliver(pending.id) } }
+                    Button("Убрать", role: .destructive) {
+                        withAnimation { pendingOutgoing.removeAll { $0.id == pending.id } }
+                    }
+                }
+                .font(.caption)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+    }
+
+    private func pendingMessage(_ pending: PendingOutgoing) -> RoleChatMessage {
+        RoleChatMessage(
+            id: pending.id,
+            chatID: chat.id,
+            fromUserID: session.currentUser?.id,
+            fromUserName: session.currentUser?.name,
+            fromUserColor: nil,
+            fromUserAvatarURL: nil,
+            fromUserInitials: nil,
+            text: pending.text,
+            createdAt: nil,
+            attachments: pending.attachments,
+            taskID: nil,
+            taskTitle: nil,
+            quickReplies: nil,
+            isSessionMarker: false,
+            steps: nil
+        )
+    }
+
+    /// «Остановить» — пока роль отвечает (владелец 01.10.2026: рабочий чат
+    /// должен давать прервать ход, как любой взрослый ИИ-чат). Написанное
+    /// до остановки сервер оставит в ленте.
+    private var stopTurnButton: some View {
+        Button {
+            Task { await stopTurns() }
+        } label: {
+            Label("Остановить", systemImage: "stop.circle")
+                .font(.subheadline)
+                .padding(.horizontal, TFSpacing.md)
+                .padding(.vertical, TFSpacing.sm)
+                .voiceCapsuleSurface()
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.tfText)
+        .disabled(isStopping)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityLabel("Остановить ответ роли")
+    }
+
+    private func stopTurns() async {
+        guard !isStopping else { return }
+        isStopping = true
+        defer { isStopping = false }
+        do { try await api.stopRoleChat(chatID: chat.id) }
+        catch { errorMessage = error.localizedDescription }
     }
 
     /// «Печатает» — пока у роли нет ни текста, ни шагов; дальше вместо
@@ -1475,18 +1592,41 @@ private struct RoleChatRoomScreen: View {
         .padding(.vertical, TFSpacing.xs)
     }
 
+    /// Отправка без ожидания сети: пузырь встаёт в ленту сразу, поле ввода
+    /// очищается тем же нажатием, сеть догоняет в фоне.
     private func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!text.isEmpty || !pendingAttachments.isEmpty), !isSending, !isUploadingAttachment else { return }
+        let pending = PendingOutgoing(id: "local-\(UUID().uuidString)", text: text,
+                                      attachments: pendingAttachments)
+        draft = ""
+        pendingAttachments = []
+        followsChatBottom = true
+        withAnimation(.snappy(duration: 0.25)) { pendingOutgoing.append(pending) }
+        await deliver(pending.id)
+    }
+
+    /// Отправить (или повторить) сообщение из «в пути». Отправки идут по
+    /// одной — порядок в ленте тот же, что порядок нажатий.
+    private func deliver(_ pendingID: String) async {
+        guard let pending = pendingOutgoing.first(where: { $0.id == pendingID }), !isSending else { return }
         isSending = true
         defer { isSending = false }
+        if let index = pendingOutgoing.firstIndex(where: { $0.id == pendingID }) {
+            pendingOutgoing[index].failed = false
+        }
         do {
-            let message = try await api.sendRoleChatMessage(chatID: chat.id, text: text,
-                                                            attachmentIDs: pendingAttachments.map(\.id))
-            draft = ""
-            pendingAttachments = []
-            if !messages.contains(where: { $0.id == message.id }) { messages.append(message) }
-        } catch { errorMessage = error.localizedDescription }
+            let message = try await api.sendRoleChatMessage(chatID: chat.id, text: pending.text,
+                                                            attachmentIDs: pending.attachments.map(\.id))
+            withAnimation(.snappy(duration: 0.25)) {
+                pendingOutgoing.removeAll { $0.id == pendingID }
+                if !messages.contains(where: { $0.id == message.id }) { messages.append(message) }
+            }
+        } catch {
+            if let index = pendingOutgoing.firstIndex(where: { $0.id == pendingID }) {
+                withAnimation { pendingOutgoing[index].failed = true }
+            }
+        }
     }
 
     // MARK: - Упоминание через «@»

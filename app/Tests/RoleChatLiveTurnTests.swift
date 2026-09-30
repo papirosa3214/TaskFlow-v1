@@ -86,7 +86,7 @@ final class RoleChatLiveTurnTests: XCTestCase {
                            "text":"Смотрю. Потом сравню","status":"running",
                            "started_at":"2026-09-30T09:00:00.000Z"}]}}
         """#)
-        guard case .roleChatLive(_, _, let turn) = event, let turn else {
+        guard case .roleChatLive(_, _, let turn, _) = event, let turn else {
             return XCTFail("ожидали снимок")
         }
         XCTAssertEqual(turn.runningThinking?.text, "Смотрю. Потом сравню")
@@ -116,7 +116,7 @@ final class RoleChatLiveTurnTests: XCTestCase {
                           {"kind":"step","id":"c1","tool":"read","detail":"~/a.txt",
                            "status":"running","started_at":"2026-09-27T09:00:01.000Z"}]}}
         """#)
-        guard case .roleChatLive(let chatID, let userID, let turn) = event, let turn else {
+        guard case .roleChatLive(let chatID, let userID, let turn, _) = event, let turn else {
             return XCTFail("ожидали roleChatLive со снимком, пришло \(String(describing: event))")
         }
         XCTAssertEqual(chatID, "chat-secretary")
@@ -134,7 +134,7 @@ final class RoleChatLiveTurnTests: XCTestCase {
         let event = parse(#"""
         {"type":"chats:live","chat_id":"chat-1","user_id":"role_qa","turn":null}
         """#)
-        guard case .roleChatLive(_, let userID, let turn) = event else {
+        guard case .roleChatLive(_, let userID, let turn, _) = event else {
             return XCTFail("ожидали roleChatLive")
         }
         XCTAssertEqual(userID, "role_qa")
@@ -147,7 +147,7 @@ final class RoleChatLiveTurnTests: XCTestCase {
          "turn":{"chat_id":"c","user_id":"r","name":"QA","items":[
            {"kind":"step","id":"s","tool":"mcp_x","status":"queued"}]}}
         """#)
-        guard case .roleChatLive(_, _, let turn) = event, let turn else {
+        guard case .roleChatLive(_, _, let turn, _) = event, let turn else {
             return XCTFail("ожидали снимок")
         }
         XCTAssertEqual(turn.items, [.step(RoleChatLiveStep(id: "s", tool: "mcp_x", detail: nil, status: .running))])

@@ -14,10 +14,38 @@ final class RoleChatRealtimeTests: XCTestCase {
         {"type":"chat:new","message":{"id":"m1","chat_id":"chat-1","channel":"chat",
          "from_user_id":"role_builder","text":"готово","created_at":"2026-09-22 19:00:00"}}
         """#)
-        guard case .roleChatMessage(let chatID) = event else {
+        guard case .roleChatMessage(let chatID, _) = event else {
             return XCTFail("ожидали roleChatMessage, пришло \(String(describing: event))")
         }
         XCTAssertEqual(chatID, "chat-1")
+    }
+
+    func testRoleChatMessageCarriesFullMessage() {
+        let event = parse(#"""
+        {"type":"chat:new","message":{"id":"m3","chat_id":"chat-1","channel":"chat",
+         "from_user_id":"role_qa","from_user_name":"QA","text":"проверил",
+         "created_at":"2026-10-01 10:00:00","attachments":[],"quick_replies":null,
+         "is_session_marker":false,
+         "steps":{"duration_ms":1200,"items":[{"kind":"step","id":"c1","tool":"read",
+           "detail":"~/a.txt","status":"done","started_at":"2026-10-01T10:00:00.000Z"}]}}}
+        """#)
+        guard case .roleChatMessage(let chatID, let message?) = event else {
+            return XCTFail("ожидали roleChatMessage с готовым сообщением, пришло \(String(describing: event))")
+        }
+        XCTAssertEqual(chatID, "chat-1")
+        XCTAssertEqual(message.id, "m3")
+        XCTAssertEqual(message.text, "проверил")
+        XCTAssertEqual(message.steps?.stepCount, 1)
+    }
+
+    func testLiveEndCarriesReplyMessageID() {
+        let event = parse(#"""
+        {"type":"chats:live","chat_id":"chat-1","user_id":"role_qa","turn":null,"message_id":"m3"}
+        """#)
+        guard case .roleChatLive(_, _, nil, let messageID) = event else {
+            return XCTFail("ожидали конец живого хода")
+        }
+        XCTAssertEqual(messageID, "m3")
     }
 
     func testChannelMessageWithoutChatIDStaysChannelMessage() {
@@ -78,7 +106,7 @@ final class RoleChatRealtimeTests: XCTestCase {
                  "started_at":"2026-09-28T10:00:00.000Z","items":[],
                  "thinking":"Сначала посмотрю доску."}}
         """#)
-        guard case .roleChatLive(let chatID, let userID, let turn?) = thinking else {
+        guard case .roleChatLive(let chatID, let userID, let turn?, _) = thinking else {
             return XCTFail("ожидали roleChatLive со снимком")
         }
         XCTAssertEqual(chatID, "chat-qa")
@@ -90,7 +118,7 @@ final class RoleChatRealtimeTests: XCTestCase {
         {"type":"chats:live","chat_id":"c","user_id":"r",
          "turn":{"chat_id":"c","user_id":"r","name":"QA","items":[{"kind":"text","text":"Привет"}]}}
         """#)
-        guard case .roleChatLive(_, _, let oldTurn?) = old else {
+        guard case .roleChatLive(_, _, let oldTurn?, _) = old else {
             return XCTFail("ожидали roleChatLive со снимком")
         }
         XCTAssertNil(oldTurn.thinking)

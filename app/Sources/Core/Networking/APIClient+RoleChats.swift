@@ -64,6 +64,16 @@ public extension APIClient {
         return response.message
     }
 
+    /// Остановить идущий ход роли (или всех ролей, если `roleID == nil`).
+    /// Написанное ролью до остановки сервер кладёт в чат обычным ответом.
+    @discardableResult
+    func stopRoleChat(chatID: String, roleID: String? = nil) async throws -> Int {
+        let body: [String: JSONValue] = roleID.map { ["role_id": .string($0)] } ?? [:]
+        struct Result: Decodable { let stopped: Int }
+        let response: Result = try await request(.post, "/chats/\(chatID)/stop", body: body)
+        return response.stopped
+    }
+
     /// Сервер использует тот же raw-upload, что `/chat/attachments`.
     func uploadRoleChatAttachment(fileName: String, data: Data, mime: String) async throws -> ApiChatAttachment {
         struct Envelope: Decodable { let attachment: ApiChatAttachment }
