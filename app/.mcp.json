@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "graft-ios": {
+      "type": "stdio",
+      "command": "/Users/max/.local/graft/node_modules/.bin/graft",
+      "args": [
+        "mcp",
+        "/Users/max/Проекты/TaskFlowNativeBuild"
+      ],
+      "env": {}
+    },
+    "graft-server": {
+      "type": "stdio",
+      "command": "ssh",
+      "args": [
+        "maksim",
+        "cd ~/Проекты/New-Todoist && PATH=$HOME/.nvm/versions/node/v22.23.1/bin:$PATH exec $HOME/.npm-global/bin/graft mcp"
+      ],
+      "env": {}
+    }
+  }
+}

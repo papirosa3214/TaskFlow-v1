@@ -1,0 +1,280 @@
+name: TaskFlow
+options:
+  bundleIdPrefix: com.maksim.taskflow
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    # Та же команда разработчика, что у рабочей Capacitor-сборки — иначе
+    # автоматическая подпись не найдёт профиль под этот телефон.
+    DEVELOPMENT_TEAM: RUD4WAP9DF
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  TaskFlow:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      # Общий код голосового прототипа используется в основном приложении.
+      - path: VoiceMessageLab/Audio/VoiceActivityGate.swift
+      - path: VoiceMessageLab/Audio/VoicePlayer.swift
+      - path: VoiceMessageLab/Audio/VoiceRecorder.swift
+      - path: VoiceMessageLab/Audio/VoiceWaveform.swift
+      - path: VoiceMessageLab/Domain/VoiceMessage.swift
+      - path: VoiceMessageLab/Presentation/VoiceMessageBubble.swift
+      - path: VoiceMessageLab/Transcription/VoiceTranscriber.swift
+      # Каталог ассетов ОБЯЗАН быть в `sources`: ключа `resources` у xcodegen
+      # нет, он молча игнорировался — каталог не попадал в проект вообще
+      # (`grep Assets.xcassets project.pbxproj` давал 0), поэтому не собирались
+      # ни иконка приложения, ни альтернативные значки, и
+      # `supportsAlternateIcons` возвращал false.
+      - path: Resources/Assets.xcassets
+      # Образцы голосов Секретаря для прослушивания в настройках (LOCK-218).
+      - path: Resources/SecretaryVoices
+        buildPhase: resources
+      # Модель состояния островка общая с расширением: оно её рисует,
+      # приложение заполняет. Один файл на два таргета — чтобы поля не
+      # разъехались молча.
+      - path: Widgets/TaskActivityAttributes.swift
+    dependencies:
+      # Распознавание речи на устройстве (просьба владельца 03.09.2026 —
+      # «подключи уже искусственный интеллект»): NVIDIA Parakeet TDT v3,
+      # портированный в CoreML — см. `Sources/Core/Speech/DictationEngine.swift`.
+      - package: FluidAudio
+      # Анимированные аватарки агентов (просьба владельца 03.09.2026:
+      # «раньше были анимированными, стали статичными») — голый `AsyncImage`
+      # не умеет GIF/WebP, показывает только первый кадр. См.
+      # `AgentAvatarView` в `Sources/Features/Chat/AgentRow.swift`.
+      - package: SDWebImageSwiftUI
+      - package: SDWebImageWebPCoder
+      - package: LiveKit
+      # Расширение с виджетом: без явной зависимости xcodegen не вложит его
+      # в бандл приложения, и Live Activity не за что будет зацепиться.
+      - target: TaskFlowWidgets
+    info:
+      path: Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Задачи
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIUserInterfaceStyle: Dark
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: Приложение обращается к серверу задач в домашней сети.
+        NSMicrophoneUsageDescription: Нужен для голосового ввода задач и заметок.
+        # Ключи приватности из `spec/NATIVE-PARTS.md` §4. Без строки-объяснения
+        # iOS убивает процесс при первом обращении к системному API — при том
+        # что СИМУЛЯТОР это молча пропускает, и дефект виден только на
+        # устройстве. Именно так «вылетал» экран «Интеграции» (LOCK-156).
+        # Apple Календарь/Напоминания — `AppleEventKitAccess.swift`, `EventKit`.
+        NSCalendarsUsageDescription: Нужен для отображения и создания событий в календаре.
+        NSCalendarsFullAccessUsageDescription: Нужен для синхронизации событий календаря с вашими задачами.
+        # Снимок камерой в чат — пункт «Камера» в меню «+» (владелец 26.09.2026).
+        NSCameraUsageDescription: Нужен, чтобы сделать снимок и прикрепить его к сообщению в чате.
+        NSRemindersUsageDescription: Нужен для синхронизации задач с Apple Напоминаниями.
+        NSRemindersFullAccessUsageDescription: Нужен для создания и управления напоминаниями в Apple Напоминаниях.
+        # Вход по Face ID — `SettingsViewModel.swift`, `LAContext`.
+        NSFaceIDUsageDescription: Используется для быстрого и безопасного входа в TaskFlow.
+        # Распознавание надиктованного текста прямо на телефоне.
+        NSSpeechRecognitionUsageDescription: Нужен, чтобы распознавать надиктованный текст задач прямо на телефоне, без отправки на сервер.
+        # Без этого ключа ActivityKit не разрешает запускать Live Activity
+        # вовсе: areActivitiesEnabled возвращает false, и кнопка «Вывести в
+        # Dynamic Island» молча ничего не делает.
+        NSSupportsLiveActivities: true
+        # Фон нужен не ради геопозиции, а ради островка: пока карточка
+        # висит, приложение должно оставаться живым и двигать её само.
+        # Обновлять островок из спящего приложения нельзя вовсе, а путь
+        # через пуши закрыт бесплатным аккаунтом (10.09.2026).
+        UIBackgroundModes:
+          - location
+        NSLocationWhenInUseUsageDescription: Пока задача показана в Dynamic Island, приложение остаётся на связи с сервером и обновляет её прогресс. Сама геопозиция никуда не отправляется и нигде не сохраняется.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maksim.taskflow.native
+        # Без этой настройки Xcode не назначает иконку приложения, и на
+        # домашнем экране остаётся серая заглушка — при том что сам значок
+        # (Resources/Assets.xcassets/AppIcon.appiconset) лежит в проекте.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Сменные значки: строка «Иконка» в настройках переключает их через
+        # штатный `setAlternateIconName`. Без этих двух ключей альтернативные
+        # наборы не попадают в сборку и вызов падает с ошибкой.
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: AppIconClassic AppIconDark AppIconRecessedCheck AppIconFlowRibbon AppIconTaskOrbit AppIconStepBlocks AppIconFoldedFlight
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: true
+        INFOPLIST_KEY_UIStatusBarStyle: UIStatusBarStyleLightContent
+        TARGETED_DEVICE_FAMILY: "1"
+
+  VoiceMessageLab:
+    type: application
+    platform: iOS
+    sources:
+      - path: VoiceMessageLab
+    dependencies:
+      - package: FluidAudio
+    info:
+      path: VoiceMessageLab/Info.plist
+      properties:
+        CFBundleDisplayName: Voice Message Lab
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        NSMicrophoneUsageDescription: Нужен для проверки записи голосовых сообщений.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maksim.taskflow.voicemessagelab
+        TARGETED_DEVICE_FAMILY: "1"
+
+  VoiceMessageLabTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: VoiceMessageLabTests
+    dependencies:
+      - target: VoiceMessageLab
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maksim.taskflow.voicemessagelab.tests
+        TEST_TARGET_NAME: VoiceMessageLab
+        GENERATE_INFOPLIST_FILE: true
+
+  # Расширение с Live Activity (Dynamic Island). Код восстановлен из
+  # Capacitor-обёртки, снесённой 09.09.2026 — там он работал; в нативном
+  # клиенте кнопка «Вывести в Dynamic Island» до 10.09.2026 показывала
+  # только тост, потому что этого таргета не существовало.
+  TaskFlowWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      # Ассеты — тем же путём, что и у приложения: ключа resources у
+      # xcodegen нет, каталог кладётся в sources, иначе аватарки агентов
+      # молча не попадут в расширение и в островке будут одни буквы.
+      - path: Widgets
+    info:
+      path: Widgets/Info.plist
+      # ⚠️ xcodegen ГЕНЕРИРУЕТ файл по этому пути из properties, а не берёт
+      # существующий: положенный рядом Info.plist он молча перезаписывает.
+      # Без NSExtension симулятор отказывается ставить приложение —
+      # «extensionDictionary must be set in placeholder attributes».
+      properties:
+        CFBundleDisplayName: TaskFlow Widgets
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        NSSupportsLiveActivities: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maksim.taskflow.native.widgets
+        TARGETED_DEVICE_FAMILY: "1"
+        SKIP_INSTALL: true
+
+  # UI-тесты: гоняют приложение целиком в симуляторе — открывают экраны,
+  # нажимают, проверяют, что пришли живые данные сервера. Снимок показывает
+  # только вид в один момент; это ловит неработающее (01.09.2026, по замечанию
+  # владельца «приложение сырое» — вслепую по спекам писали, живьём не гоняли).
+  TaskFlowUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: TaskFlow
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maksim.taskflow.native.uitests
+        TEST_TARGET_NAME: TaskFlow
+        # Свой Info.plist тест-бандлу не нужен, но подписать его без него
+        # нельзя — пусть Xcode генерирует сам.
+        GENERATE_INFOPLIST_FILE: true
+
+  # Unit-тесты: чистая логика без UI и без сети. Покрывают TodayComputation
+  # (plannerTasks, partitionOverdueToday, waitingTasks, trueEmpty/filteredEmpty),
+  # TodayFilterEngine (matches, опции), TodayDate (addDays, daysUntil, форматы),
+  # декодирование моделей (ApiUser с is_system_bot числом, ApiTask с null),
+  # TaskFormViewModel (isSaveEnabled).
+  TaskFlowTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: TaskFlow
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maksim.taskflow.native.tests
+        TEST_TARGET_NAME: TaskFlow
+        GENERATE_INFOPLIST_FILE: true
+
+  # Snapshot-тесты: ловят визуальные регрессии дизайн-системы (строка задачи
+  # во всех состояниях, шапки, панель быстрого создания, пустые состояния).
+  # Эталоны — в репо, размер экрана владельца: 420×912 @3x. Требует SPM-пакет
+  # swift-snapshot-testing — см. `packages:` ниже.
+  TaskFlowSnapshotTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SnapshotTests
+    dependencies:
+      - target: TaskFlow
+      - package: SnapshotTesting
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.maksim.taskflow.native.snapshots
+        TEST_TARGET_NAME: TaskFlow
+        GENERATE_INFOPLIST_FILE: true
+
+packages:
+  SnapshotTesting:
+    url: https://github.com/pointfreeco/swift-snapshot-testing
+    from: 1.18.0
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    from: 0.12.4
+  SDWebImageSwiftUI:
+    url: https://github.com/SDWebImage/SDWebImageSwiftUI.git
+    from: 3.1.3
+  SDWebImageWebPCoder:
+    url: https://github.com/SDWebImage/SDWebImageWebPCoder.git
+    from: 0.14.6
+  LiveKit:
+    url: https://github.com/livekit/client-sdk-swift.git
+    from: 2.17.0
+
+schemes:
+  VoiceMessageLab:
+    build:
+      targets:
+        VoiceMessageLab: all
+        VoiceMessageLabTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - VoiceMessageLabTests
+
+  TaskFlow:
+    build:
+      targets:
+        TaskFlow: all
+        TaskFlowUITests: [test]
+        TaskFlowTests: [test]
+        TaskFlowSnapshotTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - TaskFlowUITests
+        - TaskFlowTests
+        - TaskFlowSnapshotTests

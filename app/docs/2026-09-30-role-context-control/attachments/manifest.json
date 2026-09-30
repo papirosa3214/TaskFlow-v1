@@ -1,0 +1,32 @@
+[
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "ED3C7DF7-F895-45B6-8A28-F67C02362103",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "766B206A-1212-4467-A3C6-36A6EE2E4217.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "role-instruction-after-save_0_83B307D2-8EFF-4238-A74F-F09AA5B97F1B.png",
+        "timestamp" : 1790786750.53
+      }
+    ],
+    "testIdentifier" : "RoleInstructionControlUITests/testOwnerCanReachAndEditInstructionWithoutServerWrites()",
+    "testIdentifierURL" : "test://com.apple.xcode/TaskFlow/TaskFlowUITests/RoleInstructionControlUITests/testOwnerCanReachAndEditInstructionWithoutServerWrites"
+  },
+  {
+    "attachments" : [
+      {
+        "configurationName" : "Test Scheme Action",
+        "deviceId" : "ED3C7DF7-F895-45B6-8A28-F67C02362103",
+        "deviceName" : "iPhone 17 Pro",
+        "exportedFileName" : "2A656636-4FD9-457F-9D67-311A5D267884.png",
+        "isAssociatedWithFailure" : false,
+        "suggestedHumanReadableName" : "role-shared-instruction_0_DDC3D593-45B2-4D44-A3DC-047FE6C3AA93.png",
+        "timestamp" : 1790786773.55
+      }
+    ],
+    "testIdentifier" : "RoleInstructionControlUITests/testSharedRuleShowsTeamScope()",
+    "testIdentifierURL" : "test://com.apple.xcode/TaskFlow/TaskFlowUITests/RoleInstructionControlUITests/testSharedRuleShowsTeamScope"
+  }
+]

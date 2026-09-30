@@ -1,0 +1,9 @@
+.DS_Store
+**/node_modules/
+**/.env
+**/.env.local
+**/*.db
+**/*.db-*
+**/.detach_logs/
+**/DerivedData/
+**/__pycache__/

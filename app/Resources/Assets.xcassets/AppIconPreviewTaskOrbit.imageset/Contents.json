@@ -1,0 +1,22 @@
+{
+  "images": [
+    {
+      "filename": "AppIconPreviewTaskOrbit.png",
+      "idiom": "universal"
+    },
+    {
+      "filename": "AppIconPreviewTaskOrbit-dark.png",
+      "idiom": "universal",
+      "appearances": [
+        {
+          "appearance": "luminosity",
+          "value": "dark"
+        }
+      ]
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

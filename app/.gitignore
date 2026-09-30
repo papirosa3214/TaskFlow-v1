@@ -1,0 +1,31 @@
+# Сборочные артефакты Xcode — тяжёлые (500+ МБ), пересобираются с нуля
+build_sim/
+build_dev/
+build_dev_signed/
+build_device/
+build_fix/
+build_spec12/
+DerivedData/
+.build/
+.worktrees/
+
+# Генерируется xcodegen из project.yml (см. ARCHITECTURE.md — общий
+# .pbxproj был источником конфликтов, поэтому в репозитории только .yml)
+TaskFlow.xcodeproj/
+
+xcuserdata/
+*.xcuserstate
+.DS_Store
+outputs/
+uploads/
+/*-after-login.png
+/tf_after_login.png
+# Документация — часть проекта: инициативы и их решения должны сохраняться в Git.
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# Питоновский кэш инструментов синхронизации
+__pycache__/
+*.pyc
+build_check/

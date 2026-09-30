@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Граф совместной работы</title>
+  <style>
+    :root { --bg:#151515; --panel:#1e1e1f; --line:#343437; --muted:#a6a6ab; --dim:#6e6e73; --text:#f4f4f6; --orange:#ff9f0a; --ready:#b7efc5; }
+    * { box-sizing:border-box } body { margin:0; background:#0e0e0f; color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,sans-serif; }
+    .phone { width:min(100%,430px); min-height:820px; margin:0 auto; padding:26px 20px 42px; background:var(--bg); }
+    .section-head { display:flex; justify-content:space-between; align-items:center; padding-bottom:16px; border-bottom:1px solid #3b3b3e; }
+    h1 { margin:0; font-size:25px; letter-spacing:-.6px; font-weight:650; } .chev { color:#707076; font-size:22px; }
+    .summary { margin:18px 0 24px; display:flex; gap:10px; align-items:center; color:var(--muted); font-size:14px; }
+    .summary strong { color:var(--ready); font-weight:600; } .dot { width:4px; height:4px; border-radius:50%; background:#6d6d72; }
+    .graph { position:relative; height:408px; overflow:hidden; }
+    .wires { position:absolute; inset:0; width:100%; height:100%; overflow:visible; pointer-events:none; }
+    .wire { fill:none; stroke:#57575b; stroke-width:1.35; stroke-linecap:round; stroke-linejoin:round; } .wire-live { stroke:#a4d7b0; stroke-width:1.75; }
+    .wire-label { fill:#77777d; font-size:10px; font-weight:500; letter-spacing:.1px; }
+    .node { position:absolute; width:160px; min-height:64px; padding:9px; border-radius:15px; background:var(--panel); border:1px solid var(--line); display:flex; gap:8px; align-items:center; }
+    .node.ready { border-color:#6f9f7c; background:#1d2420; } .node.waiting { opacity:.97; }
+    .avatar { width:36px; height:36px; flex:0 0 auto; display:grid; place-items:center; border-radius:50%; color:#fff; font-size:12px; font-weight:750; box-shadow:inset 0 0 0 1px rgba(255,255,255,.15); }
+    .research{background:linear-gradient(145deg,#597bdb,#b45b9e)} .analyst{background:linear-gradient(145deg,#617c81,#bc975d)} .architect{background:linear-gradient(145deg,#445f95,#7197c8)} .designer{background:linear-gradient(145deg,#a55d89,#e8a269)} .builder{background:linear-gradient(145deg,#bb7046,#6052aa)} .qa{background:linear-gradient(145deg,#5f9b84,#8ec1a3)} .critic{background:linear-gradient(145deg,#8a6ca9,#c67886)}
+    .role { min-width:0; } .name { font-size:13px; line-height:16px; font-weight:620; letter-spacing:-.2px; } .state { margin-top:3px; font-size:10.5px; color:var(--muted); white-space:nowrap; } .ready .state { color:var(--ready); }
+    .n-research { left:0; top:0; }.n-analyst { right:0; top:0; }.n-architect { left:0; top:104px; }.n-designer { right:0; top:104px; }.n-builder { left:calc(50% - 80px); top:204px; }.n-qa { left:0; top:310px; }.n-critic { right:0; top:310px; }
+    .legend { margin-top:4px; padding:14px 0 0; border-top:1px solid #303034; font-size:13px; line-height:19px; color:var(--muted); }
+    .legend b { color:var(--text); font-weight:600; } .legend .arrow { color:#7b7b80; padding:0 3px; }
+    @media (max-width:370px){ .phone{padding-inline:14px}.node{width:146px}.n-builder{left:calc(50% - 73px)}.name{font-size:12px} }
+  </style>
+</head>
+<body>
+  <main class="phone">
+    <div class="section-head"><h1>План совместной работы</h1><span class="chev">⌃</span></div>
+    <div class="summary"><strong>1 готов к старту</strong><span class="dot"></span><span>6 ждут входы</span></div>
+    <section class="graph" aria-label="Граф зависимостей полного цикла">
+      <svg class="wires" viewBox="0 0 390 408" preserveAspectRatio="none" aria-hidden="true">
+        <path class="wire wire-live" d="M160 32 L230 32" />
+        <path class="wire" d="M310 64 L310 80 L80 80 L80 104" />
+        <path class="wire" d="M310 64 L310 104" />
+        <path class="wire" d="M80 168 L80 188 L195 188 L195 204" />
+        <path class="wire" d="M310 168 L310 188 L195 188" />
+        <path class="wire" d="M195 268 L195 286 L80 286 L80 310" />
+        <path class="wire" d="M160 342 L230 342" />
+        <text class="wire-label" x="173" y="24">исследование</text>
+        <text class="wire-label" x="201" y="183">2 входа</text>
+      </svg>
+      <article class="node ready n-research"><span class="avatar research">И</span><div class="role"><div class="name">Исследователь</div><div class="state">Готов к старту</div></div></article>
+      <article class="node waiting n-analyst"><span class="avatar analyst">А</span><div class="role"><div class="name">Аналитик</div><div class="state">Ждёт Исследователя</div></div></article>
+      <article class="node waiting n-architect"><span class="avatar architect">Ар</span><div class="role"><div class="name">Архитектор</div><div class="state">Ждёт Аналитика</div></div></article>
+      <article class="node waiting n-designer"><span class="avatar designer">Д</span><div class="role"><div class="name">Дизайнер</div><div class="state">Ждёт Аналитика</div></div></article>
+      <article class="node waiting n-builder"><span class="avatar builder">Р</span><div class="role"><div class="name">Разработчик</div><div class="state">Ждёт 2 входа</div></div></article>
+      <article class="node waiting n-qa"><span class="avatar qa">Q</span><div class="role"><div class="name">QA</div><div class="state">Ждёт Разработчика</div></div></article>
+      <article class="node waiting n-critic"><span class="avatar critic">К</span><div class="role"><div class="name">Критик‑проверяющий</div><div class="state">Ждёт QA</div></div></article>
+    </section>
+    <div class="legend"><b>Критический путь:</b> Исследователь <span class="arrow">→</span> Аналитик <span class="arrow">→</span> Архитектор + Дизайнер <span class="arrow">→</span> Разработчик <span class="arrow">→</span> QA <span class="arrow">→</span> Проверка</div>
+  </main>
+</body>
+</html>

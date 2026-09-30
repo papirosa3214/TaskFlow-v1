@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Ночная пересборка описаний графа graft iOS-клиента (LOCK-235, 27.09.2026).
+  Установка: cp Tools/com.maksim.graft-refresh-ios.plist ~/Library/LaunchAgents/
+             launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.maksim.graft-refresh-ios.plist
+  Мак спал в 01:40 — launchd запустит задачу при пробуждении.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.maksim.graft-refresh-ios</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/max/Проекты/TaskFlowNativeBuild/Tools/graft-refresh.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>1</integer>
+        <key>Minute</key>
+        <integer>40</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/Users/max/.local/state/graft-refresh/ios.run.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/max/.local/state/graft-refresh/ios.run.log</string>
+    <key>Nice</key>
+    <integer>10</integer>
+</dict>
+</plist>

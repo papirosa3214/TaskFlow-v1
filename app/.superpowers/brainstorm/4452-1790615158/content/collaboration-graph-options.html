@@ -1,0 +1,49 @@
+<style>
+  .graph-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(310px,1fr)); gap:18px; }
+  .graph-option { border:1px solid #323238; border-radius:18px; padding:16px; background:#17171a; cursor:pointer; }
+  .graph-option:hover { border-color:#777780; }
+  .graph-option.selected { border-color:#ff9d1c; box-shadow:0 0 0 1px #ff9d1c inset; }
+  .graph-title { display:flex; align-items:center; gap:9px; font-size:16px; font-weight:700; margin-bottom:7px; }
+  .badge { display:inline-grid; place-items:center; width:23px; height:23px; border-radius:50%; background:#34343a; color:#fff; font-size:12px; }
+  .graph-note { color:#a8a8ae; font-size:13px; line-height:1.35; min-height:36px; }
+  .board { margin-top:15px; height:184px; border-radius:13px; background:#101012; position:relative; overflow:hidden; }
+  .node { position:absolute; display:flex; flex-direction:column; align-items:center; gap:5px; color:#d8d8dd; font-size:11px; white-space:nowrap; }
+  .avatar { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:700; border:2px solid #101012; }
+  .a { background:#6a5bc9; } .b { background:#c76453; } .c { background:#397e84; } .d { background:#a27d36; }
+  .wait { color:#8f8f97; font-size:10px; } .done { color:#6bbf84; font-size:10px; }
+  .line { position:absolute; height:2px; background:#4b4b52; transform-origin:left center; } .line.active { background:#df942f; }
+  .lane { height:38px; margin:8px 10px; border-radius:9px; background:#202024; display:flex; align-items:center; gap:8px; padding:0 10px; color:#d8d8dd; font-size:12px; }
+  .lane .mini { width:23px; height:23px; border-radius:50%; display:grid; place-items:center; font-size:9px; font-weight:700; }
+  .slot { height:7px; border-radius:6px; background:#575760; flex:1; } .slot.orange { background:#d88d2d; }
+  .task { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); padding:9px 13px; border-radius:12px; background:#302b22; border:1px solid #c88a34; color:#fff; font-size:12px; font-weight:650; }
+  .step { display:flex; align-items:center; gap:6px; position:absolute; color:#ddd; font-size:11px; }.arrow { color:#777780; font-size:22px; }
+  .smallcard { position:absolute; background:#222227; border:1px solid #36363d; border-radius:10px; padding:7px; color:#ddd; font-size:10px; width:86px; }
+</style>
+
+<h2>План совместной работы — пять вариантов графа</h2>
+<p class="subtitle">Во всех вариантах: цвет — состояние, аватар — роль, линия — зависимость. Выбери не красоту, а то, с чего быстрее понятно «кто сейчас делает, кто ждёт и что разблокирует следующий шаг».</p>
+
+<div class="graph-grid" data-multiselect>
+  <div class="graph-option" data-choice="flow" onclick="toggleSelect(this)">
+    <div class="graph-title"><span class="badge">1</span> Цепочка эстафеты</div><div class="graph-note">Самый читаемый сценарий для линейного плана: шаг → результат → следующий исполнитель.</div>
+    <div class="board"><div class="line active" style="left:58px;top:72px;width:70px"></div><div class="line" style="left:155px;top:72px;width:70px"></div><div class="line" style="left:252px;top:72px;width:70px"></div><div class="node" style="left:25px;top:48px"><span class="avatar a">А</span><b>Аналитик</b><span class="done">готово</span></div><div class="node" style="left:122px;top:48px"><span class="avatar b">Р</span><b>Разработчик</b><span class="done">в работе</span></div><div class="node" style="left:219px;top:48px"><span class="avatar c">К</span><b>Критик</b><span class="wait">ждёт код</span></div><div class="node" style="left:316px;top:48px"><span class="avatar d">П</span><b>Проверяющий</b><span class="wait">ждёт ревью</span></div></div>
+  </div>
+  <div class="graph-option" data-choice="lanes" onclick="toggleSelect(this)">
+    <div class="graph-title"><span class="badge">2</span> Дорожки ролей</div><div class="graph-note">Кто занят сейчас видно за секунду; хорошо работает, когда шаги идут параллельно.</div>
+    <div class="board" style="padding-top:7px"><div class="lane"><span class="mini a">А</span>Аналитик <span class="slot orange"></span><span class="slot"></span></div><div class="lane"><span class="mini b">Р</span>Разработчик <span class="slot orange"></span><span class="slot"></span></div><div class="lane"><span class="mini c">К</span>Критик <span class="slot"></span><span class="slot"></span></div><div class="lane"><span class="mini d">П</span>Проверяющий <span class="slot"></span><span class="slot"></span></div></div>
+  </div>
+  <div class="graph-option" data-choice="hub" onclick="toggleSelect(this)">
+    <div class="graph-title"><span class="badge">3</span> Карта зависимостей</div><div class="graph-note">Центральная задача и стрелки к ролям. Лучше всего для ветвящихся, а не линейных планов.</div>
+    <div class="board"><div class="line active" style="left:178px;top:88px;width:82px;transform:rotate(-34deg)"></div><div class="line" style="left:164px;top:103px;width:86px;transform:rotate(35deg)"></div><div class="line" style="left:120px;top:91px;width:54px;transform:rotate(180deg)"></div><div class="task">Интеграция API</div><div class="node" style="left:254px;top:24px"><span class="avatar b">Р</span><b>Разработчик</b></div><div class="node" style="left:245px;top:120px"><span class="avatar c">К</span><b>Критик</b></div><div class="node" style="left:50px;top:74px"><span class="avatar a">А</span><b>Аналитик</b></div></div>
+  </div>
+  <div class="graph-option" data-choice="milestones" onclick="toggleSelect(this)">
+    <div class="graph-title"><span class="badge">4</span> Четыре контрольные точки</div><div class="graph-note">Не роли, а результаты: исследование, реализация, ревью, приёмка. Аватар отвечает за текущую точку.</div>
+    <div class="board"><div class="step" style="left:15px;top:80px"><span class="avatar a">А</span><span>Исследование<br><small class="done">готово</small></span></div><span class="arrow" style="position:absolute;left:106px;top:82px">→</span><div class="step" style="left:137px;top:80px"><span class="avatar b">Р</span><span>Реализация<br><small style="color:#d88d2d">сейчас</small></span></div><span class="arrow" style="position:absolute;left:228px;top:82px">→</span><div class="step" style="left:258px;top:80px"><span class="avatar c">К</span><span>Ревью<br><small class="wait">следом</small></span></div></div>
+  </div>
+  <div class="graph-option" data-choice="tree" onclick="toggleSelect(this)">
+    <div class="graph-title"><span class="badge">5</span> Дерево «что блокирует»</div><div class="graph-note">Показывает настоящую причину ожидания: снизу — результат, сверху — всё, что его блокирует.</div>
+    <div class="board"><div class="smallcard" style="left:22px;top:24px">Аналитик<br><span class="done">схема готова</span></div><div class="smallcard" style="left:230px;top:24px">Разработчик<br><span style="color:#d88d2d">API в работе</span></div><div class="line" style="left:100px;top:69px;width:95px;transform:rotate(31deg)"></div><div class="line active" style="left:274px;top:69px;width:92px;transform:rotate(148deg)"></div><div class="smallcard" style="left:128px;top:116px;width:120px">Критик<br><span class="wait">ждёт оба входа</span></div><div class="line" style="left:187px;top:157px;width:1px;height:20px"></div><div class="smallcard" style="left:128px;top:159px;width:120px">Проверяющий<br><span class="wait">ждёт вердикт</span></div></div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:18px">Моя рекомендация: <b>1</b> для большинства задач, а <b>5</b> автоматически включать, когда у шага больше одной входящей зависимости.</p>

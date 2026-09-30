@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 '/Users/max/Проекты/TaskFlowNativeBuild/.codex/hooks/guard_no_remote_sync.py'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
