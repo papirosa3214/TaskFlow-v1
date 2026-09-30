@@ -68,6 +68,18 @@ import {
 
 const uid = () => crypto.randomUUID();
 
+/** Превью в списке чатов: без конверта, виджет и артефакт — словом, а не
+ *  кодом. */
+function previewText(text: string): string {
+  return unwrapRoleEnvelope(text)
+    .replace(/```(?:html|artifact)[^\n]*\n[\s\S]*?(?:```|$)/g, "✦ Интерактив")
+    .replace(/```widget[^\n]*\n[\s\S]*?(?:```|$)/g, (block) => {
+      const type = block.match(/"type"\s*:\s*"([a-z_]+)"/)?.[1];
+      return type === "weather" ? "🌤 Погода" : "▦ Виджет";
+    })
+    .trim();
+}
+
 type ChatKind = "direct" | "group";
 const KINDS: ChatKind[] = ["direct", "group"];
 
@@ -234,7 +246,7 @@ export async function registerChatsRoutes(app: FastifyInstance): Promise<void> {
         return {
           ...chatRow(c.id),
           last_message: last
-            ? { ...last, text: typeof last.text === "string" ? unwrapRoleEnvelope(last.text) : last.text }
+            ? { ...last, text: typeof last.text === "string" ? previewText(last.text) : last.text }
             : null,
           unread_count: unread,
           // Название задачи для пометки в строке списка: по ней видно, какой

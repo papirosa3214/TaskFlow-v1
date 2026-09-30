@@ -1418,8 +1418,14 @@ private struct RoleChatRoomScreen: View {
                 if let taskID = message.taskID {
                     SecretaryDraftCard(taskID: taskID) { pendingTaskID = taskID }
                 } else if !message.text.isEmpty && !hasAudio {
-                    Text(message.text)
-                        .foregroundStyle(Color.tfText)
+                    if mine {
+                        Text(message.text)
+                            .foregroundStyle(Color.tfText)
+                    } else {
+                        // В группе ответы ролей тоже с разметкой, таблицами,
+                        // виджетами и артефактами — раньше здесь были звёздочки.
+                        RoleReplyMarkdown(text: message.text)
+                    }
                 }
             }
             .padding(hasAudio ? 0 : TFSpacing.md)

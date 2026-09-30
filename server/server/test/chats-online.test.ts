@@ -904,4 +904,25 @@ describe("Чаты (этап 2, онлайн-сессия Пи)", () => {
       "Начал разбирать конфиг\n\n_Остановлено._",
     ]);
   });
+  it("список чатов: виджет и артефакт в превью — словом, а не кодом", async () => {
+    const chatId = (await createChat({ kind: "group", member_ids: ["role_architect"] })).json().chat.id;
+    replyTextFor = () => "Держи калькулятор:\n```html\n<button>1</button>\n```";
+    await send(chatId, "@architect сделай калькулятор");
+    await tick(120);
+    const list = await app.inject({ method: "GET", url: "/api/chats", headers: ownerAuth });
+    const row = list.json().chats.find((c: any) => c.id === chatId);
+    expect(row.last_message.text).toBe("Держи калькулятор:\n✦ Интерактив");
+    // В самой истории ответ целиком — его рисует клиент.
+    expect(messagesByAuthor(chatId, "role_architect")[0].text).toContain("<button>1</button>");
+  });
+
+  it("первый ход роли знает про таблицы, виджеты и интерактив", async () => {
+    const chatId = (await createChat({ kind: "group", member_ids: ["role_qa"] })).json().chat.id;
+    await send(chatId, "@qa привет");
+    await tick(120);
+    const prompt = String(fakeClients[0].promptAndWait.mock.calls[0][0]);
+    expect(prompt).toContain("```widget");
+    expect(prompt).toContain("taskflow_weather");
+    expect(prompt).toContain("языком html");
+  });
 });
