@@ -1079,6 +1079,27 @@ def t_my_stats(args):
     return api("GET", "/api/tasks/my-stats")
 
 
+def t_plan_request(args):
+    """Достроить живой план совместной работы из своего идущего шага
+    (владелец 01.10.2026): нужен ещё шаг — add_step, QA/критик нашёл
+    дефекты — rework. Сервер сам решает: в пределах лимита — сразу, сверх —
+    предложением владельцу."""
+    subtask_id = (args.get("subtask_id") or "").strip()
+    if not subtask_id:
+        raise TaskFlowError("subtask_id — твой шаг плана (он есть в задании)")
+    body = {k: args[k] for k in ("kind", "role", "expected_result", "instructions", "reason", "after", "before", "defects") if args.get(k) is not None}
+    resp = api("POST", f"/api/subtasks/{subtask_id}/plan-request", body)
+    result = resp.get("result", {})
+    status = result.get("status")
+    return {
+        "итог": "применено" if status == "applied" else "ждёт решения владельца" if status == "proposed" else status,
+        "почему ждёт": result.get("reason"),
+        "новые шаги": result.get("added"),
+        "план": resp.get("plan"),
+        "связи": resp.get("edges"),
+    }
+
+
 def t_weather(args):
     """Погода для виджета в чате (владелец 01.10.2026). Данные отдаёт
     сервер (Open-Meteo), роль их не придумывает: блок из поля «виджет»
@@ -1831,6 +1852,33 @@ TOOLS = [
             "required": ["text"],
         },
         "fn": t_structure_dictation,
+    },
+    {
+        "name": "taskflow_plan_request",
+        "description": (
+            "Достроить план совместной работы из своего идущего шага. "
+            "kind=add_step — нужен ещё шаг другой роли (role, expected_result, reason; "
+            "after/before — slot_key шагов, по умолчанию после твоего). kind=rework — "
+            "только QA/критик: отправить на доработку (defects — что исправить, role — "
+            "кому, по умолчанию builder); после доработки встанет повторная проверка. "
+            "Не делай чужую работу и не закрывай чужой шаг — попроси шаг здесь."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subtask_id": {"type": "string", "description": "Твой шаг плана (id из задания)"},
+                "kind": {"type": "string", "description": "add_step | rework"},
+                "role": {"type": "string", "description": "Роль нового шага: researcher, analyst, architect, designer, builder, qa, critic_verifier"},
+                "expected_result": {"type": "string", "description": "Что должна сдать роль"},
+                "instructions": {"type": "string", "description": "Подробное задание"},
+                "reason": {"type": "string", "description": "Зачем шаг нужен — увидит владелец"},
+                "after": {"type": "array", "items": {"type": "string"}, "description": "После каких шагов (slot_key)"},
+                "before": {"type": "array", "items": {"type": "string"}, "description": "Каких ещё не начатых шагов он должен быть раньше"},
+                "defects": {"type": "string", "description": "Для rework: конкретные дефекты"},
+            },
+            "required": ["subtask_id", "kind", "reason"],
+        },
+        "fn": t_plan_request,
     },
     {
         "name": "taskflow_weather",
