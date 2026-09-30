@@ -1079,6 +1079,22 @@ def t_my_stats(args):
     return api("GET", "/api/tasks/my-stats")
 
 
+def t_consult(args):
+    """Второе мнение более сильной модели (владелец 01.10.2026: «как у
+    тебя — посовещаться с вышестоящей моделью»). В работе над задачей —
+    раз на попытку, с полным контекстом задачи и попыток; в чате — до трёх
+    раз в час."""
+    question = (args.get("question") or "").strip()
+    if not question:
+        raise TaskFlowError("question не может быть пустым")
+    body = {"question": question}
+    for key in ("context", "task_id", "subtask_id"):
+        if args.get(key):
+            body[key] = args[key]
+    resp = api("POST", "/api/consult", body)
+    return {"совет": resp.get("answer"), "модель": resp.get("model")}
+
+
 def t_plan_request(args):
     """Достроить живой план совместной работы из своего идущего шага
     (владелец 01.10.2026): нужен ещё шаг — add_step, QA/критик нашёл
@@ -1852,6 +1868,29 @@ TOOLS = [
             "required": ["text"],
         },
         "fn": t_structure_dictation,
+    },
+    {
+        "name": "taskflow_consult",
+        "description": (
+            "Посоветоваться с более сильной моделью, когда сомневаешься: перед "
+            "важным или необратимым решением (архитектура, миграция, удаление), "
+            "когда застрял после двух неудачных попыток, когда требования "
+            "противоречат друг другу. Сформулируй конкретный вопрос и приложи в "
+            "context то, что уже выяснил (варианты, ошибки, ограничения). В работе "
+            "над задачей — один раз на попытку, в чате — до трёх раз в час. Совет — "
+            "не приказ: решение и ответственность остаются на тебе."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "Конкретный вопрос"},
+                "context": {"type": "object", "description": "Что уже известно: варианты, ошибки, выдержки"},
+                "task_id": {"type": "string", "description": "Задача, над которой работаешь (если есть)"},
+                "subtask_id": {"type": "string", "description": "Твой шаг плана (если работаешь по плану)"},
+            },
+            "required": ["question"],
+        },
+        "fn": t_consult,
     },
     {
         "name": "taskflow_plan_request",
