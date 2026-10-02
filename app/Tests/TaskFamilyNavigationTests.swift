@@ -79,6 +79,40 @@ final class TaskFamilyNavigationTests: XCTestCase {
         XCTAssertEqual(model.loadedTask?.labels.map(\.id), ["label-1"])
     }
 
+    /// Приклеенная к входящей карточке закладка и активная закладка слева
+    /// стоят по одной геометрии: центр слота относительно центра колонки.
+    func testSlotCenterOffsetsAreSymmetricAroundColumnCenter() {
+        let height: CGFloat = 800
+        let slot = TaskFamilyEdgeTabs.slotHeight(height: height, count: 3)
+        XCTAssertEqual(TaskFamilyEdgeTabs.slotCenterOffset(index: 1, count: 3, height: height), 0, accuracy: 0.001)
+        XCTAssertEqual(TaskFamilyEdgeTabs.slotCenterOffset(index: 0, count: 3, height: height),
+                       -(slot + TaskFamilyEdgeTabs.spacing), accuracy: 0.001)
+        XCTAssertEqual(TaskFamilyEdgeTabs.slotCenterOffset(index: 0, count: 1, height: height), 0, accuracy: 0.001)
+    }
+
+    func testReleaseCommitsOnDistanceOrFlickAndCancelsOnFlickBack() {
+        let width: CGFloat = 400
+        // Далеко вытянули и отпустили без скорости — открываем.
+        XCTAssertTrue(TaskFamilyEdgeTabs.shouldCommit(pull: 130, velocity: 0, width: width))
+        // Чуть потянули и отпустили — возвращаем.
+        XCTAssertFalse(TaskFamilyEdgeTabs.shouldCommit(pull: 60, velocity: 0, width: width))
+        // Короткий, но быстрый бросок влево — открываем.
+        XCTAssertTrue(TaskFamilyEdgeTabs.shouldCommit(pull: 60, velocity: -800, width: width))
+        // Бросок обратно вправо отменяет даже далёкое вытягивание.
+        XCTAssertFalse(TaskFamilyEdgeTabs.shouldCommit(pull: 300, velocity: 600, width: width))
+    }
+
+    func testPullKeepsOtherTabsShiftWithinLimit() {
+        let pull = TaskFamilyPull()
+        pull.follow(40)
+        XCTAssertEqual(pull.tabsShift, 18, accuracy: 0.001)
+        pull.follow(400)
+        XCTAssertEqual(pull.tabsShift, 40, accuracy: 0.001)
+        XCTAssertEqual(pull.progress(width: 400), 1, accuracy: 0.001)
+        pull.handoff = true
+        XCTAssertEqual(pull.progress(width: 400), 0, accuracy: 0.001)
+    }
+
     private func makeAPI() -> APIClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [CardSaveURLProtocol.self]
