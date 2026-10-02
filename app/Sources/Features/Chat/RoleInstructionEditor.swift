@@ -32,8 +32,9 @@ struct RoleInstructionEditor: View {
         return block.modes.map { names[$0] ?? $0 }.joined(separator: ", ")
     }
     var body: some View {
-        Form {
-            Section("Источник и применение") {
+        ScrollView {
+          VStack(alignment: .leading, spacing: TFSpacing.lg) {
+            instructionSection("Источник и применение") {
                 Text(block.source).textSelection(.enabled)
                 Text("Режимы: " + modeLabels)
                 Text("Действует: " + sourceLabel)
@@ -52,47 +53,52 @@ struct RoleInstructionEditor: View {
                 }
                 if !block.placeholders.isEmpty { Text("Обязательные подстановки: " + block.placeholders.map { "{\($0)}" }.joined(separator: ", ")) }
             }
-            Section("Инструкция") {
+            instructionSection("Инструкция") {
                 if canEdit && block.editable {
                     TextEditor(text: $draft.text).frame(minHeight: 220)
+                        .scrollContentBackground(.hidden)
+                        .tfText(.body)
+                        .foregroundStyle(Color.tfText)
                         .disabled(busy)
                         .accessibilityIdentifier("roleContext.editor")
                 } else { Text(block.text).textSelection(.enabled) }
             }
-            if let errorText { Section { Text(errorText).accessibilityIdentifier("roleContext.error") } }
+            if let errorText { instructionSection("Ошибка") { Text(errorText).accessibilityIdentifier("roleContext.error") } }
             if draft.hasConflict {
-                Section("Инструкция изменилась на сервере") {
+                instructionSection("Инструкция изменилась на сервере") {
                     Text("Ваш текст сохранён в редакторе. Обновите версию, сравните исходный текст и затем сохраните свою правку.")
-                    Button("Обновить версию, сохранить мой текст") { Task { await refresh(preserveDraft: true) } }
+                    TFButton("Обновить версию, сохранить мой текст", variant: .secondary) { Task { await refresh(preserveDraft: true) } }
                         .accessibilityIdentifier("roleContext.refreshVersion")
                 }
             }
             if canEdit && block.editable {
-                Section {
-                    Button("Сохранить") { Task { await mutate() } }
-                        .disabled(busy || draft.hasConflict)
+                instructionSection("Действия") {
+                    TFButton("Сохранить", icon: "checkmark", isEnabled: !busy && !draft.hasConflict) { Task { await mutate() } }
                         .accessibilityIdentifier("roleContext.save")
-                    Button("Сбросить переопределение", role: .destructive) { showReset = true }
+                    TFButton("Сбросить переопределение", variant: .outline, isEnabled: !busy) { showReset = true }
                         .disabled(busy).accessibilityIdentifier("roleContext.reset")
-                    Button("История") { Task { await loadHistory() } }
+                    TFButton("История", icon: "clock.arrow.circlepath", variant: .secondary) { Task { await loadHistory() } }
                         .accessibilityIdentifier("roleContext.history")
                 }
             }
             if !history.isEmpty {
-                Section("История изменений") {
+                instructionSection("История изменений") {
                     ForEach(history) { entry in
                         DisclosureGroup("Версия \(entry.version) · \(entry.action) · \(entry.at)") {
                             Text(entry.text).textSelection(.enabled)
                             Text("Автор: \(entry.byUserId)")
-                            Button("Восстановить версию \(entry.version)") { Task { await mutate(action: "restore", version: entry.version) } }
+                            TFButton("Восстановить версию \(entry.version)", variant: .secondary) { Task { await mutate(action: "restore", version: entry.version) } }
                                 .disabled(busy || draft.hasConflict)
                                 .accessibilityIdentifier("roleContext.restore.\(entry.version)")
                         }
                     }
                 }
             }
-            Section("Исходный текст") { Text(block.defaultText).textSelection(.enabled) }
+            instructionSection("Исходный текст") { Text(block.defaultText).textSelection(.enabled) }
+          }
+          .padding(TFSpacing.lg)
         }
+        .background(Color.tfBackground)
         .navigationTitle(block.title)
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(draft.text != originalText)
@@ -110,6 +116,18 @@ struct RoleInstructionEditor: View {
         }
         .task { await refresh(preserveDraft: false); busy = false }
     }
+    private func instructionSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: TFSpacing.sm) {
+            TFSectionHeader(title)
+            TFCard {
+                VStack(alignment: .leading, spacing: TFSpacing.md, content: content)
+                    .tfText(.body)
+                    .foregroundStyle(Color.tfText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
     @MainActor private func refresh(preserveDraft: Bool) async {
         do {
             let context = try await service.context(role: role)

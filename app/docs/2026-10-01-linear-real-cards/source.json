@@ -1,0 +1,528 @@
+{
+  "workspace": {
+    "id": "demo-workspace",
+    "name": "Linear · демонстрация"
+  },
+  "selected_ids": [
+    "73c28b43-a60f-4636-aaaf-d6b07c0898d5"
+  ],
+  "issues": [
+    {
+      "id": "73c28b43-a60f-4636-aaaf-d6b07c0898d5",
+      "identifier": "TF-100",
+      "title": "Выпустить авторизацию",
+      "description": "Пользователь может войти по почте и паролю, выйти из аккаунта и восстановить доступ.\n\nК выпуску: исследование, API, экран входа, проверка сценариев и инструкция.",
+      "url": "https://linear.app/demo/issue/TF-100",
+      "priority": 2,
+      "dueDate": "2026-10-12",
+      "createdAt": "2026-10-01T10:00:00Z",
+      "updatedAt": "2026-10-01T10:00:00Z",
+      "archivedAt": null,
+      "parent": null,
+      "state": {
+        "id": "todo",
+        "name": "In Progress",
+        "type": "started"
+      },
+      "children": [
+        {
+          "id": "49183406-a85a-4af1-8908-da9b1f25d169"
+        },
+        {
+          "id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2"
+        },
+        {
+          "id": "8cbf8830-8a86-4343-8449-87d507baf826"
+        },
+        {
+          "id": "211bb35b-7bc7-40b6-91a7-1aa1fb32ea13"
+        },
+        {
+          "id": "7548553b-a741-4d9f-a4ce-1f145ee74f44"
+        }
+      ],
+      "labels": [
+        {
+          "id": "b0edf690-218e-4311-a502-bc1b248d5a88",
+          "name": "Авторизация",
+          "color": "#D83A25"
+        },
+        {
+          "id": "902aa057-c35f-4003-a21e-89be1dc63767",
+          "name": "Релиз",
+          "color": "#A6A6A6"
+        }
+      ],
+      "comments": [
+        {
+          "id": "42dfe655-6323-45b1-ad8b-1c5cb26b1eff",
+          "body": "Вход через соцсети остаётся за пределами этого выпуска.",
+          "createdAt": "2026-10-01T10:00:00Z",
+          "user": {
+            "id": "maria",
+            "name": "Мария"
+          }
+        }
+      ],
+      "history": [],
+      "attachments": [],
+      "documents": [],
+      "relations": [],
+      "inverseRelations": [],
+      "assignee": {
+        "id": "outside",
+        "name": "Внешняя команда"
+      },
+      "team": {
+        "id": "product",
+        "name": "Product"
+      },
+      "project": {
+        "id": "login",
+        "name": "Вход и доступ"
+      }
+    },
+    {
+      "id": "49183406-a85a-4af1-8908-da9b1f25d169",
+      "identifier": "TF-101",
+      "title": "Исследовать варианты авторизации",
+      "description": "Сравнить способы хранения сессии. Собрать источники, ограничения и рекомендации для команды.",
+      "url": "https://linear.app/demo/issue/TF-101",
+      "priority": 2,
+      "dueDate": "2026-10-05",
+      "createdAt": "2026-10-01T10:00:00Z",
+      "updatedAt": "2026-10-01T10:00:00Z",
+      "archivedAt": null,
+      "parent": {
+        "id": "73c28b43-a60f-4636-aaaf-d6b07c0898d5"
+      },
+      "state": {
+        "id": "todo",
+        "name": "Todo",
+        "type": "unstarted"
+      },
+      "children": [],
+      "labels": [
+        {
+          "id": "b0edf690-218e-4311-a502-bc1b248d5a88",
+          "name": "Авторизация",
+          "color": "#D83A25"
+        },
+        {
+          "id": "f1a7580e-2cc6-4e2e-84a3-8ba3309a6645",
+          "name": "Исследование",
+          "color": "#A6A6A6"
+        }
+      ],
+      "comments": [],
+      "history": [],
+      "attachments": [],
+      "documents": [],
+      "relations": [
+        {
+          "id": "5e0b23d3-a7d7-4d5b-af49-2a2a41ed700c",
+          "type": "blocks",
+          "issue": {
+            "id": "49183406-a85a-4af1-8908-da9b1f25d169",
+            "identifier": "TF-101",
+            "url": "https://linear.app/demo/issue/TF-101"
+          },
+          "relatedIssue": {
+            "id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2",
+            "identifier": "TF-102",
+            "url": "https://linear.app/demo/issue/TF-102"
+          }
+        }
+      ],
+      "inverseRelations": [],
+      "assignee": {
+        "id": "outside",
+        "name": "Внешняя команда"
+      },
+      "team": {
+        "id": "product",
+        "name": "Product"
+      },
+      "project": {
+        "id": "login",
+        "name": "Вход и доступ"
+      }
+    },
+    {
+      "id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2",
+      "identifier": "TF-102",
+      "title": "Реализовать API авторизации",
+      "description": "Подготовить методы входа, выхода и восстановления доступа.\n\nОтветы об ошибках согласовать с экраном входа.",
+      "url": "https://linear.app/demo/issue/TF-102",
+      "priority": 2,
+      "dueDate": "2026-10-06",
+      "createdAt": "2026-10-01T10:00:00Z",
+      "updatedAt": "2026-10-01T10:00:00Z",
+      "archivedAt": null,
+      "parent": {
+        "id": "73c28b43-a60f-4636-aaaf-d6b07c0898d5"
+      },
+      "state": {
+        "id": "todo",
+        "name": "Todo",
+        "type": "unstarted"
+      },
+      "children": [],
+      "labels": [
+        {
+          "id": "b0edf690-218e-4311-a502-bc1b248d5a88",
+          "name": "Авторизация",
+          "color": "#D83A25"
+        },
+        {
+          "id": "d128125e-9e90-456e-bb71-31f67cab7f03",
+          "name": "Backend",
+          "color": "#A6A6A6"
+        }
+      ],
+      "comments": [
+        {
+          "id": "ab75da8e-8dd8-4126-a293-01b62c049d74",
+          "body": "Не раскрывать в ответе, зарегистрирована ли почта.",
+          "createdAt": "2026-10-01T10:00:00Z",
+          "user": {
+            "id": "maria",
+            "name": "Мария"
+          }
+        }
+      ],
+      "history": [
+        {
+          "id": "d68cc79a-70a7-4fe8-84e0-f1587a265104",
+          "createdAt": "2026-10-01T10:00:00Z",
+          "actor": {
+            "id": "maria",
+            "name": "Мария"
+          },
+          "fromPriority": 3,
+          "toPriority": 2
+        }
+      ],
+      "attachments": [
+        {
+          "id": "332e0dcf-627e-4b2c-9e80-361b4f5576b7",
+          "title": "api-contract.json",
+          "url": "https://example.com/demo/api-contract.json"
+        }
+      ],
+      "documents": [],
+      "relations": [
+        {
+          "id": "156fcbf3-5b3e-48fa-878c-3dab0555a0ab",
+          "type": "blocks",
+          "issue": {
+            "id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2",
+            "identifier": "TF-102",
+            "url": "https://linear.app/demo/issue/TF-102"
+          },
+          "relatedIssue": {
+            "id": "8cbf8830-8a86-4343-8449-87d507baf826",
+            "identifier": "TF-103",
+            "url": "https://linear.app/demo/issue/TF-103"
+          }
+        },
+        {
+          "id": "ca500b31-c2fe-497c-9243-d90281c511be",
+          "type": "blocks",
+          "issue": {
+            "id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2",
+            "identifier": "TF-102",
+            "url": "https://linear.app/demo/issue/TF-102"
+          },
+          "relatedIssue": {
+            "id": "211bb35b-7bc7-40b6-91a7-1aa1fb32ea13",
+            "identifier": "TF-104",
+            "url": "https://linear.app/demo/issue/TF-104"
+          }
+        }
+      ],
+      "inverseRelations": [
+        {
+          "id": "5e0b23d3-a7d7-4d5b-af49-2a2a41ed700c",
+          "type": "blocks",
+          "issue": {
+            "id": "49183406-a85a-4af1-8908-da9b1f25d169",
+            "identifier": "TF-101",
+            "url": "https://linear.app/demo/issue/TF-101"
+          },
+          "relatedIssue": {
+            "id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2",
+            "identifier": "TF-102",
+            "url": "https://linear.app/demo/issue/TF-102"
+          }
+        }
+      ],
+      "assignee": {
+        "id": "outside",
+        "name": "Внешняя команда"
+      },
+      "team": {
+        "id": "product",
+        "name": "Product"
+      },
+      "project": {
+        "id": "login",
+        "name": "Вход и доступ"
+      }
+    },
+    {
+      "id": "8cbf8830-8a86-4343-8449-87d507baf826",
+      "identifier": "TF-103",
+      "title": "Собрать экран входа",
+      "description": "Собрать экран входа: почта, пароль, загрузка, сообщения об ошибках. Подключить согласованный API.",
+      "url": "https://linear.app/demo/issue/TF-103",
+      "priority": 3,
+      "dueDate": "2026-10-07",
+      "createdAt": "2026-10-01T10:00:00Z",
+      "updatedAt": "2026-10-01T10:00:00Z",
+      "archivedAt": null,
+      "parent": {
+        "id": "73c28b43-a60f-4636-aaaf-d6b07c0898d5"
+      },
+      "state": {
+        "id": "todo",
+        "name": "Todo",
+        "type": "unstarted"
+      },
+      "children": [],
+      "labels": [
+        {
+          "id": "b0edf690-218e-4311-a502-bc1b248d5a88",
+          "name": "Авторизация",
+          "color": "#D83A25"
+        },
+        {
+          "id": "030415b9-b5a3-4e2e-90f0-db2527a4bcda",
+          "name": "iOS",
+          "color": "#A6A6A6"
+        }
+      ],
+      "comments": [],
+      "history": [],
+      "attachments": [],
+      "documents": [],
+      "relations": [
+        {
+          "id": "10ecea25-69a9-4453-8457-bdf191240c7b",
+          "type": "blocks",
+          "issue": {
+            "id": "8cbf8830-8a86-4343-8449-87d507baf826",
+            "identifier": "TF-103",
+            "url": "https://linear.app/demo/issue/TF-103"
+          },
+          "relatedIssue": {
+            "id": "211bb35b-7bc7-40b6-91a7-1aa1fb32ea13",
+            "identifier": "TF-104",
+            "url": "https://linear.app/demo/issue/TF-104"
+          }
+        },
+        {
+          "id": "a68f2a2b-8fe0-461e-bb13-f479386dc226",
+          "type": "blocks",
+          "issue": {
+            "id": "8cbf8830-8a86-4343-8449-87d507baf826",
+            "identifier": "TF-103",
+            "url": "https://linear.app/demo/issue/TF-103"
+          },
+          "relatedIssue": {
+            "id": "7548553b-a741-4d9f-a4ce-1f145ee74f44",
+            "identifier": "TF-105",
+            "url": "https://linear.app/demo/issue/TF-105"
+          }
+        }
+      ],
+      "inverseRelations": [
+        {
+          "id": "156fcbf3-5b3e-48fa-878c-3dab0555a0ab",
+          "type": "blocks",
+          "issue": {
+            "id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2",
+            "identifier": "TF-102",
+            "url": "https://linear.app/demo/issue/TF-102"
+          },
+          "relatedIssue": {
+            "id": "8cbf8830-8a86-4343-8449-87d507baf826",
+            "identifier": "TF-103",
+            "url": "https://linear.app/demo/issue/TF-103"
+          }
+        }
+      ],
+      "assignee": {
+        "id": "outside",
+        "name": "Внешняя команда"
+      },
+      "team": {
+        "id": "product",
+        "name": "Product"
+      },
+      "project": {
+        "id": "login",
+        "name": "Вход и доступ"
+      }
+    },
+    {
+      "id": "211bb35b-7bc7-40b6-91a7-1aa1fb32ea13",
+      "identifier": "TF-104",
+      "title": "Проверить сценарии входа",
+      "description": "Проверить успешный вход, неверный пароль, потерю сети и восстановление доступа. Сохранить результаты проверки.",
+      "url": "https://linear.app/demo/issue/TF-104",
+      "priority": 3,
+      "dueDate": "2026-10-08",
+      "createdAt": "2026-10-01T10:00:00Z",
+      "updatedAt": "2026-10-01T10:00:00Z",
+      "archivedAt": null,
+      "parent": {
+        "id": "73c28b43-a60f-4636-aaaf-d6b07c0898d5"
+      },
+      "state": {
+        "id": "todo",
+        "name": "Todo",
+        "type": "unstarted"
+      },
+      "children": [],
+      "labels": [
+        {
+          "id": "b0edf690-218e-4311-a502-bc1b248d5a88",
+          "name": "Авторизация",
+          "color": "#D83A25"
+        },
+        {
+          "id": "ad833abb-68b7-4da0-ae4f-009d0542f08a",
+          "name": "Проверка",
+          "color": "#A6A6A6"
+        }
+      ],
+      "comments": [],
+      "history": [],
+      "attachments": [],
+      "documents": [],
+      "relations": [],
+      "inverseRelations": [
+        {
+          "id": "ca500b31-c2fe-497c-9243-d90281c511be",
+          "type": "blocks",
+          "issue": {
+            "id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2",
+            "identifier": "TF-102",
+            "url": "https://linear.app/demo/issue/TF-102"
+          },
+          "relatedIssue": {
+            "id": "211bb35b-7bc7-40b6-91a7-1aa1fb32ea13",
+            "identifier": "TF-104",
+            "url": "https://linear.app/demo/issue/TF-104"
+          }
+        },
+        {
+          "id": "10ecea25-69a9-4453-8457-bdf191240c7b",
+          "type": "blocks",
+          "issue": {
+            "id": "8cbf8830-8a86-4343-8449-87d507baf826",
+            "identifier": "TF-103",
+            "url": "https://linear.app/demo/issue/TF-103"
+          },
+          "relatedIssue": {
+            "id": "211bb35b-7bc7-40b6-91a7-1aa1fb32ea13",
+            "identifier": "TF-104",
+            "url": "https://linear.app/demo/issue/TF-104"
+          }
+        }
+      ],
+      "assignee": {
+        "id": "outside",
+        "name": "Внешняя команда"
+      },
+      "team": {
+        "id": "product",
+        "name": "Product"
+      },
+      "project": {
+        "id": "login",
+        "name": "Вход и доступ"
+      }
+    },
+    {
+      "id": "7548553b-a741-4d9f-a4ce-1f145ee74f44",
+      "identifier": "TF-105",
+      "title": "Подготовить инструкцию пользователю",
+      "description": "Описать вход, выход и восстановление доступа. Подготовить ответы на частые вопросы.",
+      "url": "https://linear.app/demo/issue/TF-105",
+      "priority": 3,
+      "dueDate": "2026-10-09",
+      "createdAt": "2026-10-01T10:00:00Z",
+      "updatedAt": "2026-10-01T10:00:00Z",
+      "archivedAt": null,
+      "parent": {
+        "id": "73c28b43-a60f-4636-aaaf-d6b07c0898d5"
+      },
+      "state": {
+        "id": "todo",
+        "name": "Todo",
+        "type": "unstarted"
+      },
+      "children": [],
+      "labels": [
+        {
+          "id": "b0edf690-218e-4311-a502-bc1b248d5a88",
+          "name": "Авторизация",
+          "color": "#D83A25"
+        },
+        {
+          "id": "91813940-49f1-4603-9f98-6a94b729f574",
+          "name": "Документация",
+          "color": "#A6A6A6"
+        }
+      ],
+      "comments": [],
+      "history": [],
+      "attachments": [],
+      "documents": [
+        {
+          "id": "3079c192-0839-475a-b56a-8362aa65b3fb",
+          "title": "Вход в аккаунт",
+          "content": "Для входа укажите почту и пароль. При потере доступа выберите восстановление.",
+          "url": "https://linear.app/demo/document/login",
+          "createdAt": "2026-10-01T10:00:00Z",
+          "creator": {
+            "id": "editor",
+            "name": "Внешний редактор"
+          }
+        }
+      ],
+      "relations": [],
+      "inverseRelations": [
+        {
+          "id": "a68f2a2b-8fe0-461e-bb13-f479386dc226",
+          "type": "blocks",
+          "issue": {
+            "id": "8cbf8830-8a86-4343-8449-87d507baf826",
+            "identifier": "TF-103",
+            "url": "https://linear.app/demo/issue/TF-103"
+          },
+          "relatedIssue": {
+            "id": "7548553b-a741-4d9f-a4ce-1f145ee74f44",
+            "identifier": "TF-105",
+            "url": "https://linear.app/demo/issue/TF-105"
+          }
+        }
+      ],
+      "assignee": {
+        "id": "outside",
+        "name": "Внешняя команда"
+      },
+      "team": {
+        "id": "product",
+        "name": "Product"
+      },
+      "project": {
+        "id": "login",
+        "name": "Вход и доступ"
+      }
+    }
+  ],
+  "fetched_at": "2026-10-01T18:01:51.184Z"
+}

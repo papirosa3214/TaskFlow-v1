@@ -197,7 +197,7 @@ struct ChatWebView: UIViewRepresentable {
         /// его iframe грузятся как обычно.
         func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
             if action.navigationType == .linkActivated, let url = action.request.url {
-                UIApplication.shared.open(url)
+                await UIApplication.shared.open(url)
                 return .cancel
             }
             return .allow

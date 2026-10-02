@@ -102,7 +102,7 @@ security probe — `createStatus=422`, `account=null`, owner-only mutation `403`
 - `~/.config/systemd/user/taskflow-trigger.service.d/roles-in-server.conf` —
   `TASKFLOW_ROLES_IN_SERVER=1`.
 - База: учётка `role_synthesizer` отключена и в архиве; текст «Постановки задач» владельца —
-  шаблон с `{{ИСПОЛНИТЕЛИ}}` (прежний текст сохранён в `~/.claude/ta[REDACTED].txt`).
+  шаблон с `{{ИСПОЛНИТЕЛИ}}` (прежний текст сохранён в `~/.claude/task-intake-prompt-backup-2026-09-23.txt`).
 
 Проверено живьём (на настоящих моделях, пробные карточки удалены):
 - Разработчик внутри сервера: взял задачу, отписался, провёл шаг, создал файл, сдал — 11 с;

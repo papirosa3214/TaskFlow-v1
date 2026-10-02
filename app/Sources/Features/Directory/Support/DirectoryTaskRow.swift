@@ -126,121 +126,45 @@ struct DirectoryTaskRow: View {
         Button {
             if settledOffset != 0 { close() } else { onOpen() }
         } label: {
-            HStack(alignment: .top, spacing: TFSpacing.md) {
+            TFTaskRowContent(title: task.title, description: task.description, isDone: task.status == .completed) {
                 if let initials = task.assigneeInitials, task.assigneeId != nil {
                     TFAvatar(size: .taskList, initials: initials, tint: Color(hex: task.assigneeColor ?? TFHexDefault.unassigned), userID: task.assigneeId)
-                        .padding(.top, index == nil ? 0 : 16)
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    if let index {
-                        Text("#" + index)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(Color.tfSub)
+            } metadata: {
+                TFTaskStructureIndicators(priority: TaskPriority(rawValue: task.priority), subtasksDone: task.subtasks.isEmpty ? nil : task.subtasks.count { $0.done }, subtasksTotal: task.subtasks.isEmpty ? nil : task.subtasks.count, childrenCount: task.childrenCount, hasCollaborationPlan: task.hasCollaborationPlan)
+                if let due = task.dueDate {
+                    HStack(spacing: 3) {
+                        Text(DirectoryDate.formatDuePlain(due))
+                        Text("· \(DirectoryDate.formatDaysLeft(due))")
+                        .foregroundStyle(DirectoryDate.daysUntil(due) <= 3 ? Color.tfOrange : Color.tfDim)
                     }
-                    HStack(spacing: TFSpacing.sm) {
-                        Text(task.title)
-                            .tfText(.body)
-                            .foregroundStyle(task.status == .completed ? Color.tfSub : Color.tfText)
-                            .strikethrough(task.status == .completed)
-                            .lineLimit(1)
-                    }
-
-                    if let description = task.description, !description.isEmpty {
-                        Text(description)
-                            .tfText(.action)
-                            .foregroundStyle(Color.tfSub)
-                            .lineLimit(2)
-                    }
-
-                    if let agentText = DirectoryAgentStateTag.text(task) {
-                        Text(agentText)
-                            .tfText(.meta)
-                            .foregroundStyle(DirectoryAgentStateTag.color(task))
-                    }
-
-                    // Роль и текущая модель агента (LOCK-177) — «Builder ·
-                    // GPT Sol». Только «Работа агентов» передаёт эту строку.
-                    if let agentLine, !agentLine.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "cpu")
-                                .font(.system(size: 10))
-                            Text(agentLine)
-                        }
-                        .tfText(.meta)
-                        .foregroundStyle(Color.tfSub)
-                        .lineLimit(1)
-                    }
-
-                    if hasBadges {
-                        HStack(spacing: TFSpacing.xs) {
-                            // Отметка глубокого исследования (миграция 052) —
-                            // рядом с флагом готовности, чтобы помеченные
-                            // задачи были видны прямо в списке проекта.
-                            if task.needsResearch {
-                                TFPill("Исследование", color: .tfSub, solidBackground: .tfCard)
-                            }
-                            if !task.subtasks.isEmpty {
-                                let done = task.subtasks.count { $0.done }
-                                TFPill("\(done)/\(task.subtasks.count)", color: .tfSub, solidBackground: .tfCard)
-                            }
-                            if task.childrenCount > 0 {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "person.2")
-                                    Text("\(task.childrenCount)")
-                                }
-                                .tfText(.caption)
-                                .foregroundStyle(Color.tfSub)
-                                .padding(.horizontal, TFSpacing.sm)
-                                .padding(.vertical, 2)
-                                .background(Color.tfCard)
-                                .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
-                            }
-                            if task.hasCollaborationPlan {
-                                TFAccentTag("ПЛАН", color: .tfPurple)
-                            }
-                            if let due = task.dueDate {
-                                HStack(spacing: 3) {
-                                    Text(DirectoryDate.formatDuePlain(due))
-                                    Text("· \(DirectoryDate.formatDaysLeft(due))")
-                                        .foregroundStyle(DirectoryDate.daysUntil(due) <= 3 ? Color.tfOrange : Color.tfDim)
-                                }
-                                .tfText(.caption)
-                                .foregroundStyle(Color.tfSub)
-                                .padding(.horizontal, TFSpacing.sm)
-                                .padding(.vertical, 2)
-                                .background(Color.tfCard)
-                                .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
-                            }
-                            ForEach(task.labels, id: \.id) { label in
-                                TFLabelPill(label.name, color: Color(hex: label.color ?? TFHexDefault.unassigned))
-                            }
-                        }
-                    }
+                    .tfText(.caption)
+                    .foregroundStyle(Color.tfSub)
+                    .padding(.horizontal, TFSpacing.sm)
+                    .padding(.vertical, 2)
+                    .background(Color.tfCard)
+                    .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
                 }
-                Spacer(minLength: TFSpacing.sm)
-                // Приоритет — стопкой шевронов справа, как в остальных строках
-                // (владелец 11.09.2026). Рисуются все четыре уровня.
-                if let priority = TaskPriority(rawValue: task.priority) {
-                    TFPriorityArrows(priority)
+                if task.needsResearch {
+                    TFPill("Исследование", color: .tfSub, solidBackground: .tfCard)
                 }
-                // Кнопки-скрепки здесь больше нет: владелец 11.09.2026 —
-                // «закреплять я буду в самой карточке, через три точки, а не
-                // рисовать эти скрепки в каждой строке». Закрепление живёт в
-                // меню «…» карточки задачи (`TaskFormScreen`).
+                if let status = DirectoryAgentStateTag.text(task) {
+                    Text(status).foregroundStyle(DirectoryAgentStateTag.color(task)).layoutPriority(-1)
+                }
+                if let index {
+                    Text("#" + index).font(.system(.caption, design: .monospaced))
+                }
+                if let agentLine, !agentLine.isEmpty {
+                    Label(agentLine, systemImage: "cpu")
+                }
+                ForEach(task.labels, id: \.id) { label in
+                    TFLabelPill(label.name, color: Color(hex: label.color ?? TFHexDefault.unassigned)).layoutPriority(-1)
+                }
             }
-            .padding(.top, 9)
-            .padding(.bottom, 12)
-            .padding(.horizontal, TFSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(TFTapRowStyle())
     }
 
-    private var hasBadges: Bool {
-        !task.subtasks.isEmpty || task.dueDate != nil || !task.labels.isEmpty
-            || task.needsResearch || task.childrenCount > 0 || task.hasCollaborationPlan
-    }
 
     private func close() {
         withAnimation(TFRowSwipe.settleAnimation(velocity: 0)) {

@@ -35,7 +35,17 @@ struct TaskFlowApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            Group {
+                #if DEBUG
+                if ProcessInfo.processInfo.environment["TASKFLOW_CHAT_COMPOSER_PREVIEW"] == "1" {
+                    AgentChatComposerPreview()
+                } else {
+                    RootView()
+                }
+                #else
+                RootView()
+                #endif
+            }
                 // 15.09.2026: мягкая верхняя кромка прокрутки на всех
                 // экранах. После обновления iOS система перестала
                 // выбирать её сама, и под шапкой появилась резкая

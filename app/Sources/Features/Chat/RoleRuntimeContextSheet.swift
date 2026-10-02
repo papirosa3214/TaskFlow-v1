@@ -18,42 +18,63 @@ struct RoleRuntimeContextSheet: View {
             Group {
                 if loading { ProgressView() }
                 else if let context {
-                    List {
-                        Section {
-                            Text(context.notice ?? "Изменения применятся при следующем запуске роли.")
-                            if !groups.isEmpty {
-                                Picker("Раздел", selection: $group) {
-                                    ForEach(groups, id: \.self) { Text($0).tag($0) }
-                                }.accessibilityIdentifier("roleContext.groups")
-                            }
-                        }
-                        if let blocks = context.blocks {
-                            ForEach(blocks.filter { $0.group == group }) { block in
-                                NavigationLink {
-                                    RoleInstructionEditor(role: role.role, block: block, canEdit: context.canEdit == true, service: service)
-                                } label: {
-                                    VStack(alignment: .leading) {
-                                        Text(block.title)
-                                        Text(block.source).font(.caption).foregroundStyle(.secondary)
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: TFSpacing.lg) {
+                            TFCard {
+                                VStack(alignment: .leading, spacing: TFSpacing.md) {
+                                    Text(context.notice ?? "Изменения применятся при следующем запуске роли.")
+                                        .tfText(.caption).foregroundStyle(Color.tfSub)
+                                    if !groups.isEmpty {
+                                        Menu {
+                                            ForEach(groups, id: \.self) { item in Button(item) { group = item } }
+                                        } label: {
+                                            HStack {
+                                                Text(group).tfText(.body)
+                                                Spacer()
+                                                Image(systemName: "chevron.down")
+                                            }.foregroundStyle(Color.tfText)
+                                        }
+                                        .accessibilityIdentifier("roleContext.groups")
                                     }
-                                }.accessibilityIdentifier("roleContext.block.\(block.id)")
-                            }
-                        } else {
-                            ForEach(context.layers) { layer in
-                                Section(layer.title) {
-                                    Text(layer.source).font(.caption)
-                                    Text(layer.text).textSelection(.enabled)
                                 }
                             }
-                        }
+                            if let blocks = context.blocks {
+                                TFCard(padding: 0) {
+                                    VStack(spacing: 0) {
+                                        ForEach(blocks.filter { $0.group == group }) { block in
+                                            NavigationLink {
+                                                RoleInstructionEditor(role: role.role, block: block, canEdit: context.canEdit == true, service: service)
+                                            } label: {
+                                                TFListRow(icon: "doc.text", iconStyle: .plain, title: block.title,
+                                                          subtitle: block.source,
+                                                          trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(Color.tfDim)))
+                                            }
+                                            .buttonStyle(TFTapRowStyle())
+                                            .accessibilityIdentifier("roleContext.block.\(block.id)")
+                                            TFDivider(inset: TFSpacing.lg)
+                                        }
+                                    }
+                                }
+                            } else {
+                                ForEach(context.layers) { layer in
+                                    TFSectionHeader(layer.title)
+                                    TFCard {
+                                        VStack(alignment: .leading, spacing: TFSpacing.md) {
+                                            Text(layer.source).tfText(.caption).foregroundStyle(Color.tfSub)
+                                            Text(layer.text).tfText(.body).textSelection(.enabled)
+                                        }
+                                    }
+                                }
+                            }
+                        }.padding(TFSpacing.lg)
                     }
                 } else {
                     ContentUnavailableView("Не удалось загрузить инструкции", systemImage: "exclamationmark.triangle", description: Text(errorText ?? ""))
                 }
             }
-            .navigationTitle("Контекст роли")
-            .navigationBarTitleDisplayMode(.inline)
+            .tfNativeHeader("Контекст роли", displayMode: .inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Готово") { dismiss() } } }
+            .background(Color.tfBackground)
             .task { await load() }
             .refreshable { await load() }
         }

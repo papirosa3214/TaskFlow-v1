@@ -155,7 +155,7 @@ struct SettingsScreen: View {
             TFDivider(inset: rowDividerInset)
             navRow(icon: "person.3.fill", title: "Команда", route: .agents)
             TFDivider(inset: rowDividerInset)
-            navRow(icon: "link", title: "Интеграции (Google, Apple)", route: .integrations)
+            navRow(icon: "link", title: "Интеграции", route: .integrations)
         }
     }
 

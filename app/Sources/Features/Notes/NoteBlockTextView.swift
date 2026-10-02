@@ -330,6 +330,7 @@ final class NoteUITextView: UITextView {
 }
 
 struct NoteBlockTextView: UIViewRepresentable {
+    @Environment(\.documentTextEditable) private var documentTextEditable
     let blockID: UUID
     var runs: [RichRun]
     let blockKind: BlockKind
@@ -359,6 +360,7 @@ struct NoteBlockTextView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> NoteUITextView {
         let tv = NoteUITextView()
+        tv.isEditable = documentTextEditable
         tv.backgroundColor = .clear
         tv.isScrollEnabled = false
         tv.textContainerInset = .zero
@@ -381,6 +383,8 @@ struct NoteBlockTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: NoteUITextView, context: Context) {
+        if !documentTextEditable, uiView.isFirstResponder { uiView.resignFirstResponder() }
+        uiView.isEditable = documentTextEditable
         context.coordinator.parent = self
         controller.blockKind = blockKind
         controller.baseFontOverride = baseFontOverride

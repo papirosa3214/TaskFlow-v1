@@ -45,10 +45,10 @@ public extension APIClient {
         return response.turns
     }
 
-    func sendRoleChatMessage(chatID: String, text: String, attachmentIDs: [String] = []) async throws -> RoleChatMessage {
-        struct Body: Encodable { let text: String; let attachment_ids: [String] }
+    func sendRoleChatMessage(chatID: String, text: String, attachmentIDs: [String] = [], mode: RoleChatWorkMode = .work) async throws -> RoleChatMessage {
+        struct Body: Encodable { let text: String; let attachment_ids: [String]; let work_mode: RoleChatWorkMode }
         let response: RoleChatMessageEnvelope = try await request(
-            .post, "/chats/\(chatID)/messages", body: Body(text: text, attachment_ids: attachmentIDs)
+            .post, "/chats/\(chatID)/messages", body: Body(text: text, attachment_ids: attachmentIDs, work_mode: mode)
         )
         return response.message
     }

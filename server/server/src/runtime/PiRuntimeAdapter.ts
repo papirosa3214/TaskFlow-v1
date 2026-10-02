@@ -1,4 +1,6 @@
+import { chatModeInstruction, type ChatWorkMode } from "./chatWorkMode.js";
 import { chatInstructionArgs } from "./instructionResources.js";
+import { ensureRoleHome, prepareChatSessionDirectory } from "./roleHome.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -745,7 +747,7 @@ export const piRuntime: RuntimeAdapter = {
     const client = new RpcClient({
       cliPath: resolvePiCliPath(),
       cwd: input.cwd ?? process.cwd(),
-      ...(mcpConfigPath ? { args: ["--mcp-config", mcpConfigPath, ...await chatInstructionArgs(role,mcpConfigPath)] } : {}),
+      ...(mcpConfigPath ? { args: ["--mcp-config", mcpConfigPath, ...await chatInstructionArgs(role,mcpConfigPath,"work",input.cwd ?? process.cwd())] } : {}),
       provider,
       model,
       // NODE_USE_ENV_PROXY=1 — без него Pi встроенный fetch игнорирует
@@ -1033,6 +1035,7 @@ export async function modelExists(id: string): Promise<boolean> {
 /** Аргументы старта живой сессии Пи в чате. Никакого taskId — чат живёт
  *  отдельной осью, карточки и аренда остаются нетронутыми. */
 export interface StartChatRunInput {
+  mode?: ChatWorkMode;
   chatId: string;
   role: RoleName;
   /** id ролевой учётки (role_<role>) — будет автором сообщения-ответа. */
@@ -1209,10 +1212,13 @@ export async function startChatRun(
     // своей учёткой и своим набором инструментов, а не личным MCP-конфигом
     // владельца (владелец 25.09.2026: роли в чате — те же агенты, что и в
     // карточках, без ассоциации с Pi Agent).
-    mcpConfigPath = prepareRoleRunAccess(runId, role);
+    mcpConfigPath = prepareRoleRunAccess(runId, role, input.mode, input.chatId);
+    if (input.mode === "plan" && !mcpConfigPath) throw new Error("Планирование недоступно: не удалось применить ограничения инструментов");
+    const home = ensureRoleHome(role);
+    const sessionDirectory = await prepareChatSessionDirectory(role, input.chatId, input.sessionId);
     const args: string[] = [];
     if (mcpConfigPath) {
-      args.push("--mcp-config", mcpConfigPath, ...await chatInstructionArgs(role,mcpConfigPath));
+      args.push("--mcp-config", mcpConfigPath, ...await chatInstructionArgs(role,mcpConfigPath,input.mode));
     }
     if (input.sessionId) {
       // --session-id продолжает РОВНО ту сессию, что у нас в таблице.
@@ -1222,10 +1228,11 @@ export async function startChatRun(
       // ожиданием «следующее сообщение продолжает тот же контекст».
       args.push("--session-id", input.sessionId);
     }
+    args.push("--session-dir", sessionDirectory);
 
     const newClient = new RpcClient({
       cliPath: resolvePiCliPath(),
-      cwd: process.cwd(),
+      cwd: home.workspace,
       provider: resolvedProvider,
       model: resolvedModel,
       // NODE_USE_ENV_PROXY=1 — без него встроенный fetch Pi игнорирует
@@ -1310,6 +1317,7 @@ export async function startChatRun(
 
     try {
       await newClient.start();
+      if (input.mode === "deep_research" && match.reasoning) await newClient.setThinkingLevel("high");
       // Сессия могла стартовать с нашим sessionId (resume) или с новым
       // (Pi создал сам). Реальный id берём через getState(), а не
       // session_start — тот же путь, что в startRun: getState()
@@ -1324,7 +1332,7 @@ export async function startChatRun(
       // тишины (он прерывает ход раньше, если роль замолчала).
       try {
         await Promise.race([
-          newClient.promptAndWait(input.prompt, undefined, timeoutMs),
+          newClient.promptAndWait(input.mode ? chatModeInstruction(input.mode) + "\n\n" + input.prompt : input.prompt, undefined, timeoutMs),
           watchdog,
         ]);
       } catch (error) {

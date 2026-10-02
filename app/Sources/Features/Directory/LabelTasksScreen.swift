@@ -135,69 +135,31 @@ struct LabelTasksScreen: View {
             .padding(.top, 2)
 
             Button { pendingTaskID = task.id } label: {
-            HStack(alignment: .top, spacing: TFSpacing.md) {
-                if let initials = task.assigneeInitials, task.assigneeId != nil {
-                    TFAvatar(size: .taskList, initials: initials, tint: Color(hex: task.assigneeColor ?? TFHexDefault.unassigned), userID: task.assigneeId)
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                        Text(task.title)
-                            .tfText(.body)
-                            .foregroundStyle(isDone ? Color.tfSub : Color.tfText)
-                            .strikethrough(isDone)
-                            .lineLimit(1)
-
-                        if let description = task.description, !description.isEmpty {
-                            // Веб буквально всегда дописывает «…» после первых 50
-                            // символов, даже если описание короче — не улучшаю,
-                            // воспроизвожу как есть (ARCHITECTURE.md правило 3).
-                            Text("\(description.prefix(50))…")
-                                .tfText(.caption)
-                                .foregroundStyle(Color.tfSub)
-                                .lineLimit(1)
+                TFTaskRowContent(title: task.title, description: task.description, isDone: isDone, horizontalPadding: 0) {
+                    if let initials = task.assigneeInitials, task.assigneeId != nil {
+                        TFAvatar(size: .taskList, initials: initials, tint: Color(hex: task.assigneeColor ?? TFHexDefault.unassigned), userID: task.assigneeId)
+                    }
+                } metadata: {
+                    TFTaskStructureIndicators(priority: TaskPriority(rawValue: task.priority), subtasksDone: task.subtasks.isEmpty ? nil : task.subtasks.count { $0.done }, subtasksTotal: task.subtasks.isEmpty ? nil : task.subtasks.count, childrenCount: task.childrenCount, hasCollaborationPlan: task.hasCollaborationPlan)
+                    if let due = task.dueDate {
+                        HStack(spacing: 3) {
+                            Image(systemName: "calendar").font(.system(size: 10))
+                            Text(DirectoryDate.dueShort(due))
                         }
-
-                        HStack(spacing: TFSpacing.xs) {
-                            ForEach(task.labels, id: \.id) { l in
-                                TFLabelPill(l.name, color: Color(hex: l.color ?? TFHexDefault.unassigned))
-                            }
-                            if let due = task.dueDate {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "calendar").font(.system(size: 10))
-                                    Text(DirectoryDate.dueShort(due))
-                                }
-                                .tfText(.caption)
-                                .foregroundStyle(Color.tfSub)
-                                .padding(.horizontal, TFSpacing.sm)
-                                .padding(.vertical, 2)
-                                .background(Color.tfCard)
-                                .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
-                            }
-                            if !task.subtasks.isEmpty {
-                                let done = task.subtasks.count { $0.done }
-                                TFPill("\(done)/\(task.subtasks.count)", color: .tfSub, solidBackground: .tfCard)
-                            }
-                            if task.childrenCount > 0 {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "person.2")
-                                    Text("\(task.childrenCount)")
-                                }
-                                .tfText(.caption)
-                                .foregroundStyle(Color.tfSub)
-                                .padding(.horizontal, TFSpacing.sm)
-                                .padding(.vertical, 2)
-                                .background(Color.tfCard)
-                                .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
-                            }
-                            if task.hasCollaborationPlan {
-                                TFAccentTag("ПЛАН", color: .tfPurple)
-                            }
-                        }
+                        .tfText(.caption)
+                        .foregroundStyle(Color.tfSub)
+                        .padding(.horizontal, TFSpacing.sm)
+                        .padding(.vertical, 2)
+                        .background(Color.tfCard)
+                        .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
+                    }
+                    ForEach(task.labels, id: \.id) { label in
+                        TFLabelPill(label.name, color: Color(hex: label.color ?? TFHexDefault.unassigned)).layoutPriority(-1)
                     }
                 }
             }
             .buttonStyle(TFTapRowStyle())
         }
-        .padding(.vertical, TFSpacing.md)
         .padding(.horizontal, TFSpacing.lg)
     }
 

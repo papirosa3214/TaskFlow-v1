@@ -3,8 +3,8 @@ import UIKit
 
 /// Два режима задачи во всём приложении: компактная панель
 /// `QuickAddTaskView` для создания и одна плоская системная шторка для
-/// существующей задачи. Все поля в готовой задаче активны сразу.
-struct TaskFormScreen: View {
+/// существующей задачи. Текст включается для редактирования карандашом.
+struct TaskCardContent: View {
     let taskID: String?
 
     private enum LinkedTaskNavigation: Identifiable, Hashable {
@@ -100,7 +100,7 @@ struct TaskFormScreen: View {
     /// что сейчас в работе. Раньше (LOCK-248) по умолчанию были раскрыты
     /// «Сведения» и «Лента активности». Без `AppStorage` — состояние живёт в
     /// текущей сессии экрана и сбрасывается при каждом открытии карточки.
-    @State private var expandedSections: Set<TaskDetailSection> = []
+    @State private var expandedSections: Set<TaskDetailSection>
     /// Итог карточки — секция «Итог» (LOCK-273). nil — не загружен или пуст.
     @State private var outcome: ApiTaskOutcome?
     /// Выведена ли карточка в Dynamic Island — чтобы в «Ещё» был пункт
@@ -125,26 +125,48 @@ struct TaskFormScreen: View {
     /// `/task/new?dictate=1` из `CreateMenu` веба): поле названия
     /// сфокусировано, кнопка микрофона показана. Само распознавание при
     /// тапе — `DictationEngine.shared` (просьба владельца 03.09.2026).
-    init(taskID: String? = nil, presetDueToday: Bool = false, startDictation: Bool = false) {
-        self.taskID = taskID
-        self._viewModel = State(initialValue: TaskFormViewModel(taskID: taskID, presetDueToday: presetDueToday, startDictation: startDictation))
-        self._showQuickAdd = State(initialValue: taskID == nil)
-        self._isExpanded = State(initialValue: false)
-    }
+    let family: [ApiTask]
+    let onFamilyLoaded: ([ApiTask]) -> Void
+    let onFamilySelected: (String) -> Void
+    let onSwitchAvailable: (((String) -> Void)?) -> Void
+    let onSelectionFailed: () -> Void
+    let onExpandedSectionsChanged: (Set<TaskDetailSection>) -> Void
+    let preview: Bool
+    @State private var switchingFamily = false
+    @State private var leavingFamily = false
+    @State private var savingSection = false
+    @State private var armedEditors: Set<String> = []
+    @State private var activeEditors: Set<String> = []
 
-    /// «Развернуть» из `QuickAddTaskView` — тот же экран, СРАЗУ с готовой
-    /// вью-моделью и в режиме полной формы (сохранение всё ещё «создание»:
-    /// Вью-модель остаётся той же, поэтому введённые в панели данные
-    /// не теряются.
-    init(expandingFrom viewModel: TaskFormViewModel) {
-        self.taskID = nil
-        self._viewModel = State(initialValue: viewModel)
-        self._showQuickAdd = State(initialValue: false)
-        self._isExpanded = State(initialValue: true)
+    init(model: TaskFormViewModel, expanding: Bool, family: [ApiTask],
+         onFamilyLoaded: @escaping ([ApiTask]) -> Void,
+         onFamilySelected: @escaping (String) -> Void,
+         onSwitchAvailable: @escaping (((String) -> Void)?) -> Void = { _ in },
+         onSelectionFailed: @escaping () -> Void = {},
+         initialExpandedSections: Set<TaskDetailSection> = [],
+         onExpandedSectionsChanged: @escaping (Set<TaskDetailSection>) -> Void = { _ in },
+         preview: Bool = false) {
+        taskID = model.taskID
+        _viewModel = State(initialValue: model)
+        _showQuickAdd = State(initialValue: model.taskID == nil && !expanding)
+        _isExpanded = State(initialValue: expanding)
+        self.family = family
+        self.onFamilyLoaded = onFamilyLoaded
+        self.onFamilySelected = onFamilySelected
+        self.onSwitchAvailable = onSwitchAvailable
+        self.onSelectionFailed = onSelectionFailed
+        self.onExpandedSectionsChanged = onExpandedSectionsChanged
+        self.preview = preview
+        _expandedSections = State(initialValue: initialExpandedSections)
+        _newSubtaskBlocks = State(initialValue: model.pendingNewStepBlocks ?? [NoteBlock(kind: .paragraph)])
+        _insertSubtaskBlocks = State(initialValue: model.pendingInsertedStepBlocks ?? [NoteBlock(kind: .paragraph)])
+        _insertAfterSubtaskID = State(initialValue: model.pendingInsertAfterStepID)
     }
 
     var body: some View {
-        if viewModel.isEditing || isExpanded {
+        if preview {
+            formPresentationBody
+        } else if viewModel.isEditing || isExpanded {
             fullFormBody
         } else {
             // Создание, панель ещё не показана/уже закрыта — фон-заглушка
@@ -294,66 +316,7 @@ struct TaskFormScreen: View {
         // старых системах эффекта нет вовсе и кромка остаётся прежней.
         .modifier(TFSoftTopScrollEdge())
         .navigationBarBackButtonHidden(true)
-        .toolbar {
-            // LOCK-254: без `Spacer()` — с ним iOS 26 рисует дисмисс и
-            // диктовку как два отдельных стеклянных «шарика» по разным
-            // краям клавиатуры, а не одну пилюлю (владелец 30.09.2026,
-            // после Lock 1: «как были два отдельных шарика, так и есть»).
-            // Рядом друг с другом система объединяет их в одну капсулу —
-            // тот же визуальный язык, что у Markdown-панели.
-            ToolbarItemGroup(placement: .keyboard) {
-                taskKeyboardDismissButton
-                taskKeyboardDictationButton
-            }
-            if viewModel.agentState != nil || (viewModel.attemptLadder?.currentStep ?? 0) > 0 {
-                ToolbarItem(placement: .principal) {
-                    HStack(spacing: TFSpacing.sm) {
-                        if let state = viewModel.agentState {
-                            Label(agentStateText(state), systemImage: agentStateIcon(state))
-                                .tfText(.caption)
-                                .foregroundStyle(agentStateColor(state))
-                        }
-                        if let ladder = viewModel.attemptLadder, ladder.currentStep > 0 {
-                            AttemptLadderView(ladder: ladder, agentState: viewModel.agentState)
-                        }
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    Task {
-                        // Отложенное сохранение перебиваем здесь, а не внутри
-                        // `saveExistingEdits` — см. комментарий у метода.
-                        pendingSaveTask?.cancel()
-                        if viewModel.isEditing { await saveExistingEdits() }
-                        dismiss()
-                    }
-                } label: {
-                    Image(systemName: "xmark")
-                }
-                .accessibilityLabel("Закрыть")
-            }
-            if viewModel.isEditing {
-                editingToolbarItems
-            } else {
-                if viewModel.showAiButton {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        aiStructureButton
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await submit() }
-                    } label: {
-                        Text(viewModel.isSaving ? "Сохранение…" : "Готово")
-                            .fontWeight(.semibold)
-                    }
-                    .tint(Color.tfRed)
-                    .disabled(!viewModel.isSaveEnabled)
-                }
-            }
-        }
+        .toolbar { if !preview { formToolbarContent } }
         .confirmationDialog("Удалить задачу?", isPresented: $isDeleteConfirmationPresented, titleVisibility: .visible) {
             Button("Удалить", role: .destructive) { Task { await deleteCurrentTask() } }
             Button("Отмена", role: .cancel) {}
@@ -441,6 +404,68 @@ struct TaskFormScreen: View {
     // развернуть имя типа и падал переполнением стека на устройстве
     // (в симуляторе стек больше — там держалось). Вид и поведение
     // прежние, поделены только границы.
+    @ToolbarContentBuilder
+    private var formToolbarContent: some ToolbarContent {
+            // LOCK-254: без `Spacer()` — с ним iOS 26 рисует дисмисс и
+            // диктовку как два отдельных стеклянных «шарика» по разным
+            // краям клавиатуры, а не одну пилюлю (владелец 30.09.2026,
+            // после Lock 1: «как были два отдельных шарика, так и есть»).
+            // Рядом друг с другом система объединяет их в одну капсулу —
+            // тот же визуальный язык, что у Markdown-панели.
+            ToolbarItemGroup(placement: .keyboard) {
+                taskKeyboardDismissButton
+                taskKeyboardDictationButton
+            }
+            if viewModel.agentState != nil || (viewModel.attemptLadder?.currentStep ?? 0) > 0 {
+                ToolbarItem(placement: .principal) {
+                    HStack(spacing: TFSpacing.sm) {
+                        if let state = viewModel.agentState {
+                            Label(agentStateText(state), systemImage: agentStateIcon(state))
+                                .tfText(.caption)
+                                .foregroundStyle(agentStateColor(state))
+                        }
+                        if let ladder = viewModel.attemptLadder, ladder.currentStep > 0 {
+                            AttemptLadderView(ladder: ladder, agentState: viewModel.agentState)
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    Task {
+                        // Отложенное сохранение перебиваем здесь, а не внутри
+                        // `saveExistingEdits` — см. комментарий у метода.
+                        pendingSaveTask?.cancel()
+                        if viewModel.isEditing { await saveExistingEdits() }
+                        dismiss()
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .accessibilityLabel("Закрыть")
+            }
+            if viewModel.isEditing {
+                editingToolbarItems
+            } else {
+                if viewModel.showAiButton {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        aiStructureButton
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task { await submit() }
+                    } label: {
+                        Text(viewModel.isSaving ? "Сохранение…" : "Готово")
+                            .fontWeight(.semibold)
+                    }
+                    .tint(Color.tfRed)
+                    .disabled(!viewModel.isSaveEnabled)
+                }
+            }
+    }
+
     @ViewBuilder private var headerSection: some View {
             Section {
                 // Итог перечитывается, когда меняется состояние карточки
@@ -460,17 +485,25 @@ struct TaskFormScreen: View {
                     // тоже доступны через ту же ленту — отдельно не
                     // урезаны, раз просили «точно как описание, без
                     // ограничений».
-                    BlockDocumentEditor(
-                        blocks: $viewModel.titleBlocks,
-                        focus: titleFocus,
-                        placeholder: "Название задачи",
-                        baseFontOverride: UIFontMetrics(forTextStyle: .headline)
-                            .scaledFont(for: .systemFont(ofSize: 17, weight: .regular)),
-                        textColor: UIColor(Color.tfText),
-                        onEdit: { scheduleSave() }
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .listRowSeparator(.hidden)
+                    HStack(alignment: .top, spacing: TFSpacing.sm) {
+                        BlockDocumentEditor(
+                            blocks: $viewModel.titleBlocks,
+                            focus: titleFocus,
+                            placeholder: "Название задачи",
+                            baseFontOverride: UIFontMetrics(forTextStyle: .headline)
+                                .scaledFont(for: .systemFont(ofSize: 17, weight: .regular)),
+                            textColor: UIColor(Color.tfText),
+                            requestsFocus: activeEditors.contains("title"),
+                            onEdit: { scheduleSave() }
+                        )
+                        .id(activeEditors.contains("title"))
+                        .modifier(CardTextEditGate(enabled: !viewModel.isEditing || activeEditors.contains("title"), identifier: "title", text: viewModel.title, arm: { armedEditors.insert("title") }))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .listRowSeparator(.hidden)
+                        if armedEditors.contains("title") || activeEditors.contains("title") {
+                            editorButton("title")
+                        }
+                    }
                     titleBlockBottomDivider
                 }
                 .listRowSeparator(.hidden)
@@ -636,13 +669,18 @@ struct TaskFormScreen: View {
                     placeholder: "Описание",
                     baseFontOverride: UIFont.preferredFont(forTextStyle: .footnote),
                     textColor: UIColor(Color.tfSub),
+                    requestsFocus: activeEditors.contains("description"),
                     onEdit: { scheduleSave() }
                 )
+                .id(activeEditors.contains("description"))
+                .modifier(CardTextEditGate(enabled: !viewModel.isEditing || activeEditors.contains("description"), identifier: "description", text: viewModel.taskDescription, arm: { armedEditors.insert("description") }))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .listRowSeparator(.hidden)
             }
 
-            collapsibleSection(.details, title: "Сведения") { detailsContent }
+            collapsibleSection(.details, title: "Сведения") {
+                detailsContent.modifier(CardTextEditGate(enabled: !viewModel.isEditing || activeEditors.contains("details"), identifier: "details", text: "\(nativeDueText), \(viewModel.priority.label), метки: \(nativeLabelsText), исполнитель: \(selectedRoleTitle)", arm: { armedEditors.insert("details") }))
+            }
 
             // Секция целиком скрыта, пока не подтверждено, что approved-план
             // есть — иначе на обычных карточках оставалась бы пустая строка.
@@ -959,7 +997,8 @@ struct TaskFormScreen: View {
     private func linkedTaskRow(_ task: ApiTask, relation: String) -> some View {
         let status = linkedTaskStatus(task)
         return Button {
-            linkedTaskNavigation = .detail(task.id)
+            if family.contains(where: { $0.id == task.id }) { switchFamily(task.id) }
+            else { linkedTaskNavigation = .detail(task.id) }
         } label: {
             HStack(spacing: TFSpacing.sm) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -1066,32 +1105,114 @@ struct TaskFormScreen: View {
             // карточка задачи не рисует.
     }
 
-    /// Тапабельный заголовок секции-«аккордеона»: тот же `taskSectionHeader`,
-    /// + справа шеврон (вверх/вниз) — единственный сигнал свёрнутости.
+    /// Тапабельный заголовок секции-«аккордеона»: вся строка переключает
+    /// состояние; отдельный шеврон не рисуем, чтобы не создавать визуальный шум.
     /// Тап переключает членство в `expandedSections` с пружинистой
     /// анимацией; само содержимое секции оборачивается через
     /// `collapsibleSection` (LOCK-248).
     @ViewBuilder
     private func collapsibleHeader(_ section: TaskDetailSection, _ title: String) -> some View {
         let expanded = expandedSections.contains(section)
+        return HStack(spacing: TFSpacing.sm) {
+            Button {
+                withAnimation(.easeInOut(duration: TFDuration.fast)) {
+                    var next = expandedSections
+                    if expanded { next.remove(section) }
+                    else { next.insert(section) }
+                    expandedSections = next
+                    onExpandedSectionsChanged(next)
+                }
+            } label: {
+                HStack {
+                    taskSectionHeader(title)
+                    Spacer(minLength: 0)
+                }.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint(expanded ? "Свернуть" : "Развернуть")
+            if let key = sectionEditKey(section), armedEditors.contains(key) || activeEditors.contains(key) {
+                editorButton(key)
+            }
+        }
+    }
+
+    private func sectionEditKey(_ section: TaskDetailSection) -> String? {
+        switch section {
+        case .description: "description"
+        case .details: "details"
+        case .subtasks: "subtasks"
+        default: nil
+        }
+    }
+
+    private func editorButton(_ key: String) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: TFDuration.fast)) {
-                if expanded { expandedSections.remove(section) }
-                else { expandedSections.insert(section) }
+            if activeEditors.contains(key) {
+                guard !savingSection else { return }
+                savingSection = true
+                Task {
+                    defer { savingSection = false }
+                    guard await flushCardEdits() else { return }
+                    activeEditors.remove(key)
+                    armedEditors.remove(key)
+                }
+            } else {
+                activeEditors.insert(key)
+                armedEditors.remove(key)
             }
         } label: {
-            HStack(spacing: TFSpacing.sm) {
-                taskSectionHeader(title)
-                Spacer(minLength: 0)
-                Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityHidden(true)
-            }
-            .contentShape(Rectangle())
+            Image(systemName: activeEditors.contains(key) ? "checkmark" : "pencil")
+                .font(.footnote)
+                .frame(width: 44, height: 44)
         }
         .buttonStyle(.plain)
-        .accessibilityHint(expanded ? "Свернуть" : "Развернуть")
+        .disabled(switchingFamily || savingSection)
+        .accessibilityLabel(activeEditors.contains(key) ? "Сохранить изменения" : "Редактировать")
+        .accessibilityIdentifier("task.edit.\(key)")
+    }
+
+    private func flushCardEdits() async -> Bool {
+        pendingSaveTask?.cancel()
+        pendingSaveTask = nil
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+        while viewModel.isSaving {
+            try? await Task.sleep(for: .milliseconds(50))
+            if Task.isCancelled { return false }
+        }
+        guard !viewModel.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            viewModel.saveErrorMessage = "Введите название задачи"
+            return false
+        }
+        guard await viewModel.save(taskStore: taskStore) else { return false }
+        for task in subtaskCommitTasks.values { task.cancel() }
+        subtaskCommitTasks.removeAll()
+        for subtask in viewModel.subtasks {
+            guard let draft = subtaskTitleDrafts[subtask.id] else { continue }
+            let title = MarkdownEncoder.encode(draft).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { viewModel.saveErrorMessage = "Введите название шага"; return false }
+            if title != subtask.title {
+                guard await viewModel.renameSubtask(subtask, to: title) else { return false }
+            }
+        }
+        subtaskTitleDrafts.removeAll()
+        if let updated = viewModel.loadedTask, !family.isEmpty {
+            onFamilyLoaded(family.map { $0.id == updated.id ? updated : $0 })
+        }
+        return true
+    }
+
+    private func switchFamily(_ id: String) {
+        guard id != taskID, !switchingFamily, !savingSection, isEditorReady else { onSelectionFailed(); return }
+        switchingFamily = true
+        Task {
+            guard await flushCardEdits() else { switchingFamily = false; onSelectionFailed(); return }
+            viewModel.pendingNewStepBlocks = newSubtaskBlocks
+            viewModel.pendingInsertedStepBlocks = insertSubtaskBlocks
+            viewModel.pendingInsertAfterStepID = insertAfterSubtaskID
+            viewModel.stopPolling()
+            leavingFamily = true
+            onFamilySelected(id)
+        }
     }
 
     /// Обёртка секции списка под аккордеон: контент показывается только
@@ -1197,6 +1318,8 @@ struct TaskFormScreen: View {
                     textColor: UIColor(Color.tfSub),
                     onEdit: { scheduleSubtaskCommit(subtask) }
                 )
+                .id(activeEditors.contains("subtasks"))
+                .modifier(CardTextEditGate(enabled: !viewModel.isEditing || activeEditors.contains("subtasks"), identifier: "subtask.\(subtask.id)", text: subtask.title, arm: { armedEditors.insert("subtasks") }))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -1243,6 +1366,7 @@ struct TaskFormScreen: View {
     /// у `BlockDocumentEditor` такого сигнала со всего списка нет — коммитим
     /// с тем же дебаунсом, что у названия/описания задачи (400 мс тишины).
     private func scheduleSubtaskCommit(_ subtask: ApiSubtask) {
+        guard !activeEditors.contains("subtasks") else { return }
         subtaskCommitTasks[subtask.id]?.cancel()
         subtaskCommitTasks[subtask.id] = Task {
             try? await Task.sleep(for: .milliseconds(400))
@@ -1252,6 +1376,7 @@ struct TaskFormScreen: View {
     }
 
     private func commitSubtaskTitle(_ subtask: ApiSubtask) {
+        guard !activeEditors.contains("subtasks") else { return }
         guard let draft = subtaskTitleDrafts[subtask.id] else { return }
         let trimmed = MarkdownEncoder.encode(draft).trimmingCharacters(in: .whitespacesAndNewlines)
         // Пустым названием шаг не затираем — это почти всегда промах, а не
@@ -2235,7 +2360,7 @@ struct TaskFormScreen: View {
     }
 
     private func scheduleSave() {
-        guard viewModel.isEditing, isEditorReady else { return }
+        guard viewModel.isEditing, isEditorReady, activeEditors.isEmpty else { return }
         pendingSaveTask?.cancel()
         pendingSaveTask = Task {
             try? await Task.sleep(for: .milliseconds(400))
@@ -2258,15 +2383,12 @@ struct TaskFormScreen: View {
     }
 
     private func handleDisappear() {
+        onSwitchAvailable(nil)
+        guard !leavingFamily else { return }
         viewModel.stopPolling()
         pendingSaveTask?.cancel()
         guard viewModel.isEditing, isEditorReady else { return }
-        // Карточку закрыли, не выходя из строки шага — правка не должна
-        // пропасть вместе с экраном.
-        for subtask in viewModel.subtasks where subtaskTitleDrafts[subtask.id] != nil {
-            commitSubtaskTitle(subtask)
-        }
-        Task { await saveExistingEdits() }
+        Task { _ = await flushCardEdits() }
     }
 
     private func reportSubtitle(_ report: TaskReport) -> String {
@@ -2310,7 +2432,7 @@ struct TaskFormScreen: View {
     }
 
     private func loadScreen() async {
-        await viewModel.loadIfNeeded()
+        await viewModel.loadIfNeeded(showLoading: viewModel.loadedTask == nil)
         await viewModel.loadRoles()
         if taskStore.tasks.isEmpty { await taskStore.load() }
         if projectStore.projects.isEmpty { await projectStore.load() }
@@ -2321,6 +2443,17 @@ struct TaskFormScreen: View {
         viewModel.startPolling()
         refreshDynamicIslandState()
         isEditorReady = true
+        onSwitchAvailable(switchFamily)
+        if taskID != nil {
+            let current = viewModel.loadedTask
+            if let current {
+                let parent = viewModel.parentTask ?? current
+                let children = viewModel.parentTask == nil ? viewModel.childTasks : (parent.children ?? [])
+                var seen = Set<String>()
+                let members = ([parent] + children).filter { seen.insert($0.id).inserted }
+                if members.count > 1 { onFamilyLoaded(members) }
+            }
+        }
     }
 
     private func submit() async {
@@ -2366,7 +2499,7 @@ private struct FocusDictationTargetModifier: ViewModifier {
     let isTitleFocused: Bool
     let isDescriptionFocused: Bool
     let isCommentFocused: Bool
-    @Binding var dictationTarget: TaskFormScreen.DictationTarget
+    @Binding var dictationTarget: TaskCardContent.DictationTarget
     let scheduleSave: () -> Void
 
     func body(content: Content) -> some View {

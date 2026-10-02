@@ -73,6 +73,8 @@ import { registerRoleRunJobRoutes } from "./routes/role-run-jobs.js";
 import { registerTaskCollaborationPlanRoutes } from "./routes/task-collaboration-plans.js";
 import { registerSubtaskArtifactRoutes } from "./routes/subtask-artifacts.js";
 import { registerRuntimeContextRoutes } from "./routes/runtime-context.js";
+import { registerLinearRoutes } from "./routes/linear.js";
+import { registerComposioRoutes } from "./routes/composio.js";
 
 /**
  * Собирает и возвращает готовый Fastify-инстанс — регистрирует плагины,
@@ -342,6 +344,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerSubtaskCommentRoutes(app);
   registerSubtaskArtifactRoutes(app);
   registerRuntimeContextRoutes(app);
+  registerComposioRoutes(app);
+  registerLinearRoutes(app);
   registerNotificationRoutes(app);
   registerLiveActivityRoutes(app);
   registerSearchRoutes(app);

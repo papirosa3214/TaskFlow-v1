@@ -121,9 +121,22 @@ struct SearchScreen: View {
                     TFTaskRow(TFTaskRowModel(
                         projectName: task.projectName,
                         projectColor: task.projectColor.map { Color(hex: $0) },
+                        assigneeInitials: task.assigneeId != nil ? task.assigneeInitials : nil,
+                        assigneeColor: task.assigneeColor.map { Color(hex: $0) },
+                        assigneeID: task.assigneeId,
                         title: task.title,
                         isDone: task.status == .completed,
-                        description: task.description
+                        description: task.description,
+                        agentStatus: DirectoryAgentStateTag.text(task),
+                        agentStatusColor: DirectoryAgentStateTag.color(task),
+                        subtasksDone: task.subtasks.isEmpty ? nil : task.subtasks.count { $0.done },
+                        subtasksTotal: task.subtasks.isEmpty ? nil : task.subtasks.count,
+                        childrenCount: task.childrenCount,
+                        hasCollaborationPlan: task.hasCollaborationPlan,
+                        priority: TaskPriority(rawValue: task.priority),
+                        isOverdue: task.status == .active && task.dueDate.map { DirectoryDate.daysUntil($0) < 0 } == true,
+                        dueText: task.dueDate.map { DirectoryDate.dueShort($0) },
+                        labels: task.labels.map { ($0.name, Color(hex: $0.color ?? TFHexDefault.unassigned)) }
                     )) {
                         route = .taskDetail(taskID: task.id)
                     }

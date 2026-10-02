@@ -153,6 +153,43 @@ struct RoleReplyMarkdown: View {
                 .foregroundStyle(color)
         }
     }
+
+    private func listRow(marker: Text, block: NoteBlock, fade: RoleTextFade?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: TFSpacing.sm) {
+            marker
+                .foregroundStyle(Color.tfSub)
+                .frame(minWidth: 14, alignment: .trailing)
+            inline(block.runs, fade: fade)
+        }
+        .padding(.leading, CGFloat(block.level) * TFSpacing.lg)
+    }
+
+    private func inline(_ runs: [RichRun], fade: RoleTextFade?) -> some View {
+        Text(Self.attributed(runs))
+            .foregroundStyle(color)
+            .roleReveal(fade)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Прогоны с марками → `AttributedString`: жирный/курсив/код/зачёркнутый
+    /// через `inlinePresentationIntent` (его понимает `Text`), ссылка — `link`.
+    static func attributed(_ runs: [RichRun]) -> AttributedString {
+        var result = AttributedString()
+        for run in runs {
+            var piece = AttributedString(run.text)
+            var intent: InlinePresentationIntent = []
+            if run.bold { intent.insert(.stronglyEmphasized) }
+            if run.italic { intent.insert(.emphasized) }
+            if run.code { intent.insert(.code) }
+            if run.strike { intent.insert(.strikethrough) }
+            if !intent.isEmpty { piece.inlinePresentationIntent = intent }
+            if run.underline { piece.underlineStyle = .single }
+            if let href = run.linkHref, let url = URL(string: href) { piece.link = url }
+            result += piece
+        }
+        return result
+    }
 }
 
 /// Таблица из ответа роли (`| a | b |`): шапка, чередование строк,
@@ -210,40 +247,5 @@ struct ChatTableView: View {
             .gridColumnAlignment(alignment == .trailing ? .trailing : alignment == .center ? .center : .leading)
     }
 
-    private func listRow(marker: Text, block: NoteBlock, fade: RoleTextFade?) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: TFSpacing.sm) {
-            marker
-                .foregroundStyle(Color.tfSub)
-                .frame(minWidth: 14, alignment: .trailing)
-            inline(block.runs, fade: fade)
-        }
-        .padding(.leading, CGFloat(block.level) * TFSpacing.lg)
-    }
 
-    private func inline(_ runs: [RichRun], fade: RoleTextFade?) -> some View {
-        Text(Self.attributed(runs))
-            .foregroundStyle(color)
-            .roleReveal(fade)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// Прогоны с марками → `AttributedString`: жирный/курсив/код/зачёркнутый
-    /// через `inlinePresentationIntent` (его понимает `Text`), ссылка — `link`.
-    static func attributed(_ runs: [RichRun]) -> AttributedString {
-        var result = AttributedString()
-        for run in runs {
-            var piece = AttributedString(run.text)
-            var intent: InlinePresentationIntent = []
-            if run.bold { intent.insert(.stronglyEmphasized) }
-            if run.italic { intent.insert(.emphasized) }
-            if run.code { intent.insert(.code) }
-            if run.strike { intent.insert(.strikethrough) }
-            if !intent.isEmpty { piece.inlinePresentationIntent = intent }
-            if run.underline { piece.underlineStyle = .single }
-            if let href = run.linkHref, let url = URL(string: href) { piece.link = url }
-            result += piece
-        }
-        return result
-    }
 }

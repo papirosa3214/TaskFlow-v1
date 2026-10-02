@@ -18,7 +18,7 @@ public struct TFAvatar: View {
         case xl = 44
         /// Списки задач: роль читается отдельной колонкой рядом с тремя
         /// строками содержания, а не теряется в одной строке заголовка.
-        case taskList = 52
+        case taskList = 60
     }
 
     let size: Size

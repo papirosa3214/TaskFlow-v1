@@ -36,7 +36,6 @@ struct AgentsScreen: View {
                 if !viewModel.disabledProfiles.isEmpty {
                     disabledSection
                 }
-                roleInfoSection
             }
             .padding(.vertical, TFSpacing.lg)
         }
@@ -65,7 +64,7 @@ struct AgentsScreen: View {
         .onDisappear { viewModel.stop() }
         .sheet(item: $editorMode) { mode in
             RoleEditorSheet(mode: mode, viewModel: viewModel)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
     }
@@ -198,33 +197,4 @@ struct AgentsScreen: View {
         return taskStore.tasks.first { $0.id == id }
     }
 
-    private var roleInfoSection: some View {
-        VStack(alignment: .leading, spacing: TFSpacing.sm) {
-            TFSectionHeader("Роль агента")
-            TFCard {
-                VStack(alignment: .leading, spacing: TFSpacing.md) {
-                    roleInfoRow(color: .tfRed, name: "Владелец", text: "полный доступ ко всем задачам и настройкам")
-                    roleInfoRow(color: .tfBlue, name: "Оркестратор", text: "ведёт работу ботов: заводит и правит любые задачи и проекты, назначает исполнителей, но ничего не удаляет")
-                    roleInfoRow(color: .tfPurple, name: "Агент", text: "может редактировать назначенные задачи, добавлять комментарии, отмечать выполнение")
-                    roleInfoRow(color: .tfDim, name: "Наблюдатель", text: "только просмотр")
-                }
-            }
-        }
-        .padding(.horizontal, TFSpacing.screenHorizontal)
-    }
-
-    private func roleInfoRow(color: Color, name: String, text: String) -> some View {
-        HStack(alignment: .top, spacing: TFSpacing.sm) {
-            Text(name)
-                .tfText(.meta)
-                .foregroundStyle(color)
-                .padding(.horizontal, TFSpacing.sm)
-                .padding(.vertical, 2)
-                .background(color.opacity(0.18))
-                .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
-            Text(text)
-                .tfText(.action)
-                .foregroundStyle(Color.tfSub)
-        }
-    }
 }

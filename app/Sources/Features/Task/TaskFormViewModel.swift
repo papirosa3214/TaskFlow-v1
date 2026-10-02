@@ -123,6 +123,11 @@ final class TaskFormViewModel {
         }
     }
 
+    var pendingNewStepBlocks: [NoteBlock]?
+    var pendingInsertedStepBlocks: [NoteBlock]?
+    var pendingInsertAfterStepID: String?
+    var loadedTask: ApiTask? { originalTask }
+
     private var originalTask: ApiTask?
     /// Роль на момент загрузки карточки — чтобы не отправлять
     /// `owner_selected_role` при каждом сохранении, если владелец её не менял.
@@ -197,10 +202,10 @@ final class TaskFormViewModel {
         }
     }
 
-    func loadIfNeeded() async {
+    func loadIfNeeded(showLoading: Bool = true) async {
         guard let taskID else { return }
-        isLoadingTask = true
-        defer { isLoadingTask = false }
+        if showLoading { isLoadingTask = true }
+        defer { if showLoading { isLoadingTask = false } }
         do {
             let task = try await apiClient.task(id: taskID)
             originalTask = task
@@ -709,8 +714,9 @@ final class TaskFormViewModel {
         }
     }
 
-    func renameSubtask(_ subtask: ApiSubtask, to newTitle: String) async {
-        guard let index = subtasks.firstIndex(where: { $0.id == subtask.id }) else { return }
+    @discardableResult
+    func renameSubtask(_ subtask: ApiSubtask, to newTitle: String) async -> Bool {
+        guard let index = subtasks.firstIndex(where: { $0.id == subtask.id }) else { return false }
         let snapshot = subtasks[index]
         subtasks[index] = ApiSubtask(
             id: subtask.id, taskId: subtask.taskId, title: newTitle, done: subtask.done, position: subtask.position,
@@ -719,10 +725,12 @@ final class TaskFormViewModel {
         )
         do {
             _ = try await apiClient.patchSubtask(id: subtask.id, fields: ["title": .string(newTitle)])
+            return true
         } catch {
             // Откат молча — это «текст сам вернулся к старому», без объяснений.
             subtasks[index] = snapshot
             saveErrorMessage = Self.message(error)
+            return false
         }
     }
 
@@ -852,7 +860,7 @@ final class TaskFormViewModel {
     }
 
     private func saveEdit(taskID: String, trimmedTitle: String, taskStore: TaskStore) async throws {
-        guard let originalTask else { return }
+        guard let originalTask else { throw APIError.invalidResponse }
         var fields: [String: JSONValue] = [:]
         if trimmedTitle != originalTask.title { fields["title"] = .string(trimmedTitle) }
         let desc = taskDescription.isEmpty ? nil : taskDescription
@@ -864,6 +872,9 @@ final class TaskFormViewModel {
         if durationMin != originalTask.durationMin { fields["duration_min"] = durationMin.map { JSONValue.number(Double($0)) } ?? .null }
         if projectId != originalTask.projectId { fields["project_id"] = projectId.map { JSONValue.string($0) } ?? .null }
         if priority.rawValue != originalTask.priority { fields["priority"] = .number(Double(priority.rawValue)) }
+        if selectedLabelIds != Set(originalTask.labels.map(\.id)) {
+            fields["label_ids"] = .array(selectedLabelIds.sorted().map { .string($0) })
+        }
         if assigneeId != originalTask.assigneeId { fields["assignee_id"] = assigneeId.map { JSONValue.string($0) } ?? .null }
         // Роль-исполнитель, выбранная владельцем (LOCK-178). Пусто — снять
         // выбор и вернуть задачу диспетчеру («Автоматически»). Сравниваем со
@@ -884,7 +895,9 @@ final class TaskFormViewModel {
         }
 
         guard !fields.isEmpty else { return }
-        _ = await taskStore.patch(taskId: taskID, fields: fields) { _ in }
+        let updated = try await apiClient.patchTask(id: taskID, fields: fields)
+        self.originalTask = updated
+        taskStore.apply(.taskUpdated(updated))
         if ownerSelectedRole != originalRole { originalRole = ownerSelectedRole }
     }
 

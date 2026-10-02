@@ -609,6 +609,7 @@ private struct PendingOutgoing: Identifiable, Equatable {
     let id: String
     let text: String
     let attachments: [ApiChatAttachment]
+    let mode: RoleChatWorkMode
     var failed = false
 }
 
@@ -638,6 +639,7 @@ private struct RoleChatRoomScreen: View {
     @State private var previewAttachmentURL: URL?
     @State private var player = VoicePlayer()
     @State private var pendingVoices: [VoiceMessage] = []
+    @State private var pendingVoiceModes: [UUID: RoleChatWorkMode] = [:]
     @State private var uploadedVoiceIDs: [UUID: String] = [:]
     @State private var sendingVoiceIDs: Set<UUID> = []
     /// Режим выбора сообщений: включается из меню «…» или долгим нажатием на
@@ -664,6 +666,8 @@ private struct RoleChatRoomScreen: View {
     @State private var pendingOutgoing: [PendingOutgoing] = []
     /// Идёт запрос «Остановить» — кнопка не жмётся дважды.
     @State private var isStopping = false
+    @State private var workMode: RoleChatWorkMode = .work
+    @State private var finishingTurns: [String: RoleChatLiveTurn] = [:]
     /// Автопрокрутка работает, пока владелец читает конец ленты. Ручной
     /// скролл отключает её до возвращения к низу.
     @State private var followsChatBottom = true
@@ -671,7 +675,12 @@ private struct RoleChatRoomScreen: View {
     @State private var chatIsNearBottom = true
     private let api = APIClient()
 
-    init(chat: RoleChat) { _chat = State(initialValue: chat) }
+    init(chat: RoleChat) {
+        _chat = State(initialValue: chat)
+        let saved = UserDefaults.standard.string(forKey: "roleChat.mode." + chat.createdBy + "." + chat.id)
+        let mode = saved.flatMap(RoleChatWorkMode.init(rawValue:)) ?? .work
+        _workMode = State(initialValue: RoleChatWorkMode.available(in: chat).contains(mode) ? mode : .work)
+    }
 
     var body: some View {
         ZStack {
@@ -732,7 +741,12 @@ private struct RoleChatRoomScreen: View {
                     },
                     onSendText: { Task { await send() } },
                     onSendVoice: sendVoicePreview,
-                    onDiscardVoice: { _ in }
+                    onDiscardVoice: { _ in },
+                    workMode: $workMode,
+                    availableModes: RoleChatWorkMode.available(in: chat),
+                    isResponding: !liveTurns.isEmpty || !typists.isEmpty,
+                    isStopping: isStopping,
+                    onStop: { Task { await stopTurns() } }
                 )
             }
         }
@@ -878,10 +892,10 @@ private struct RoleChatRoomScreen: View {
                 case .roleChatLive(let id, let userID, let turn, let messageID) where id == chatID:
                     if let turn {
                         liveTurns[userID] = turn
-                    } else if let messageID, messages.contains(where: { $0.id == messageID }) {
-                        // Готовый ответ уже в ленте (сервер шлёт chat:new
-                        // раньше конца хода) — живой пузырь уходит тем же кадром.
-                        withAnimation(.snappy(duration: 0.25)) { liveTurns[userID] = nil }
+                    } else if let messageID, let message = messages.first(where: { $0.id == messageID }) {
+                        // Polling may have loaded the final message before chat:new.
+                        // Retain the paced tail through the same completion path.
+                        insertIncoming(message)
                     } else {
                         // Ответа в ленте ещё нет (ход без ответа, потерянный
                         // chat:new или старый сервер): сначала дочитываем
@@ -891,7 +905,11 @@ private struct RoleChatRoomScreen: View {
                         Task {
                             await refresh()
                             guard liveTurns[userID]?.startedAt == finishedStart else { return }
-                            withAnimation(.snappy(duration: 0.25)) { liveTurns[userID] = nil }
+                            if let messageID, let message = messages.first(where: { $0.id == messageID }) {
+                                insertIncoming(message)
+                            } else {
+                                liveTurns[userID] = nil
+                            }
                         }
                     }
                 default:
@@ -967,6 +985,12 @@ private struct RoleChatRoomScreen: View {
         .onChange(of: voice.errorMessage) { _, reason in
             if let reason { errorMessage = reason }
         }
+        .onChange(of: workMode) { _, mode in
+            UserDefaults.standard.set(mode.rawValue, forKey: "roleChat.mode." + chat.createdBy + "." + chat.id)
+        }
+        .onChange(of: chat.members.map(\.id)) { _, _ in
+            if !RoleChatWorkMode.available(in: chat).contains(workMode) { workMode = .work }
+        }
         .onDisappear { voice.cancel(); player.stop() }
         .sheet(item: Binding(
             get: { pendingTaskID.map(RoomTaskRef.init) },
@@ -1025,11 +1049,8 @@ private struct RoleChatRoomScreen: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .id(message.id)
                     }
-                    ForEach(visibleLiveTurns, id: \.userID) { turn in
+                    ForEach(visibleLiveTurns, id: \.playbackID) { turn in
                         liveTurnRow(turn)
-                    }
-                    if !isSelecting && (!visibleLiveTurns.isEmpty || !typists.isEmpty) {
-                        stopTurnButton
                     }
                     if !visibleTypists.isEmpty {
                         if chat.kind != "group", let onlyUserID = visibleTypists.keys.first,
@@ -1089,12 +1110,12 @@ private struct RoleChatRoomScreen: View {
 
     /// Живой ход виден и в группе: у каждого ответа своя подпись роли.
     private var visibleLiveTurns: [RoleChatLiveTurn] {
-        return liveTurns.values
+        return (Array(liveTurns.values) + Array(finishingTurns.values))
             .filter { !$0.items.isEmpty || $0.thinking != nil }
             .sorted { $0.userID < $1.userID }
     }
 
-    private var visibleMessages: [RoleChatMessage] { messages }
+    private var visibleMessages: [RoleChatMessage] { messages.filter { finishingTurns[$0.id] == nil } }
 
     /// Вставить сообщение из сокета: новое — в конец, известное — заменить.
     /// Живой пузырь автора уходит тем же кадром, что появляется готовый, —
@@ -1102,14 +1123,19 @@ private struct RoleChatRoomScreen: View {
     /// сервер его принял.
     private func insertIncoming(_ message: RoleChatMessage) {
         let mine = message.fromUserID == session.currentUser?.id
-        withAnimation(.snappy(duration: 0.25)) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
             if let index = messages.firstIndex(where: { $0.id == message.id }) {
                 messages[index] = message
             } else {
                 messages.append(message)
             }
             if let author = message.fromUserID, !mine {
-                liveTurns[author] = nil
+                if let turn = liveTurns[author] {
+                    finishingTurns[message.id] = turn.completed(with: message)
+                    liveTurns[author] = nil
+                }
                 typists[author] = nil
                 typistTools[author] = nil
             }
@@ -1168,26 +1194,6 @@ private struct RoleChatRoomScreen: View {
         )
     }
 
-    /// «Остановить» — пока роль отвечает (владелец 01.10.2026: рабочий чат
-    /// должен давать прервать ход, как любой взрослый ИИ-чат). Написанное
-    /// до остановки сервер оставит в ленте.
-    private var stopTurnButton: some View {
-        Button {
-            Task { await stopTurns() }
-        } label: {
-            Label("Остановить", systemImage: "stop.circle")
-                .font(.subheadline)
-                .padding(.horizontal, TFSpacing.md)
-                .padding(.vertical, TFSpacing.sm)
-                .voiceCapsuleSurface()
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Color.tfText)
-        .disabled(isStopping)
-        .frame(maxWidth: .infinity, alignment: .center)
-        .accessibilityLabel("Остановить ответ роли")
-    }
-
     private func stopTurns() async {
         guard !isStopping else { return }
         isStopping = true
@@ -1204,8 +1210,11 @@ private struct RoleChatRoomScreen: View {
     }
 
     private func liveTurnRow(_ turn: RoleChatLiveTurn) -> some View {
-        RoleLiveTurnBubble(turn: turn, showsName: chat.kind == "group")
-            .id(turn.startedAt ?? turn.userID)
+        let messageID = finishingTurns.first { $0.value.playbackID == turn.playbackID }?.key
+        return RoleLiveTurnBubble(turn: turn, showsName: chat.kind == "group", isComplete: messageID != nil) {
+            if let messageID { finishingTurns[messageID] = nil }
+        }
+        .id(turn.playbackID)
     }
 
     private func loadLiveTurns() async {
@@ -1604,7 +1613,7 @@ private struct RoleChatRoomScreen: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!text.isEmpty || !pendingAttachments.isEmpty), !isSending, !isUploadingAttachment else { return }
         let pending = PendingOutgoing(id: "local-\(UUID().uuidString)", text: text,
-                                      attachments: pendingAttachments)
+                                      attachments: pendingAttachments, mode: workMode)
         draft = ""
         pendingAttachments = []
         followsChatBottom = true
@@ -1623,7 +1632,7 @@ private struct RoleChatRoomScreen: View {
         }
         do {
             let message = try await api.sendRoleChatMessage(chatID: chat.id, text: pending.text,
-                                                            attachmentIDs: pending.attachments.map(\.id))
+                                                            attachmentIDs: pending.attachments.map(\.id), mode: pending.mode)
             withAnimation(.snappy(duration: 0.25)) {
                 pendingOutgoing.removeAll { $0.id == pendingID }
                 if !messages.contains(where: { $0.id == message.id }) { messages.append(message) }
@@ -1692,7 +1701,10 @@ private struct RoleChatRoomScreen: View {
     }
 
     private func sendVoicePreview(_ message: VoiceMessage) async -> Bool {
-        if !pendingVoices.contains(where: { $0.id == message.id }) { pendingVoices.append(message) }
+        if !pendingVoices.contains(where: { $0.id == message.id }) {
+            pendingVoices.append(message)
+            pendingVoiceModes[message.id] = workMode
+        }
         await sendVoice(message.id)
         // Запись передана ленте; при сетевой ошибке в ней остаётся повтор.
         return true
@@ -1762,9 +1774,10 @@ private struct RoleChatRoomScreen: View {
             let text: String
             if case .ready(let recognized) = message.transcript { text = recognized }
             else { text = "" }
-            let sent = try await api.sendRoleChatMessage(chatID: chat.id, text: text, attachmentIDs: [attachmentID])
+            let sent = try await api.sendRoleChatMessage(chatID: chat.id, text: text, attachmentIDs: [attachmentID], mode: pendingVoiceModes[id] ?? workMode)
             if !messages.contains(where: { $0.id == sent.id }) { messages.append(sent) }
             pendingVoices.removeAll { $0.id == id }
+            pendingVoiceModes[id] = nil
             uploadedVoiceIDs.removeValue(forKey: id)
         } catch { errorMessage = error.localizedDescription }
     }

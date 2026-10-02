@@ -278,6 +278,29 @@ struct IntegrationsScreen: View {
                         if let successMessage = viewModel.successMessage {
                             successBanner(successMessage)
                         }
+                        TFSectionHeader("Подключения TaskFlow")
+                        NavigationLink {
+                            ComposioIntegrationsScreen()
+                        } label: {
+                            TFCard(padding: 0) {
+                                TFListRow(icon: "puzzlepiece.extension", title: "Composio",
+                                          subtitle: "Аккаунты сервисов и доступ ролей",
+                                          trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(Color.tfDim)))
+                            }
+                        }
+                        .buttonStyle(TFTapRowStyle())
+                        .accessibilityIdentifier("integrations.composio")
+                        NavigationLink {
+                            LinearImportScreen()
+                        } label: {
+                            TFCard(padding: 0) {
+                                TFListRow(icon: "arrow.down.doc", title: "Linear",
+                                          subtitle: "Выбор задач и перенос структуры",
+                                          trailing: AnyView(Image(systemName: "chevron.right").foregroundStyle(Color.tfDim)))
+                            }
+                        }
+                        .buttonStyle(TFTapRowStyle())
+                        .accessibilityIdentifier("integrations.linear")
                         appleSection
                         thingsSection
                         googleSection

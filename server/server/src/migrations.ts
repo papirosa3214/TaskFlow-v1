@@ -2770,13 +2770,82 @@ const migrations: Migration[] = [
     },
   },
   {
+    id: "083_chat_work_mode",
+    description: "Режим сообщения чата: работа, планирование, глубокое исследование.",
+    up: () => {
+      const cols = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{name: string}>;
+      if (!cols.some(c => c.name === "work_mode")) {
+        db.exec("ALTER TABLE chat_messages ADD COLUMN work_mode TEXT NOT NULL DEFAULT 'work' CHECK(work_mode IN ('work','plan','deep_research'))");
+      }
+    },
+  },
+
+  {
+    id: "084_role_composio",
+    description: "Composio: подключение и наборы инструментов по ролям, без секретов в БД.",
+    up: () => db.exec(`CREATE TABLE IF NOT EXISTS role_composio (
+      role TEXT PRIMARY KEY REFERENCES roles(key) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+      toolkits TEXT
+    )`),
+  },
+  {
+    id: "085_linear_import",
+    description: "Linear: mappings, reviewed snapshots and source history without changing task semantics.",
+    up: () => db.exec(`
+      CREATE TABLE IF NOT EXISTS linear_import_tasks (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+        source_url TEXT NOT NULL,
+        snapshot TEXT NOT NULL,
+        applied_fields TEXT NOT NULL,
+        imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY(owner_id,workspace_id,source_id)
+      );
+      CREATE TABLE IF NOT EXISTS linear_import_objects (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL,
+        source_issue_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        local_id TEXT,
+        applied_text TEXT,
+        snapshot TEXT NOT NULL,
+        PRIMARY KEY(owner_id,workspace_id,source_issue_id,kind,source_id)
+      );
+      CREATE TABLE IF NOT EXISTS linear_import_relations (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        source_issue_id TEXT NOT NULL,
+        target_issue_id TEXT NOT NULL,
+        relation_type TEXT NOT NULL,
+        managed_edge INTEGER NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        snapshot TEXT NOT NULL,
+        PRIMARY KEY(owner_id,workspace_id,source_id)
+      );
+      CREATE TABLE IF NOT EXISTS linear_import_previews (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        snapshot TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        result TEXT
+      );
+    `),
+  },
+
+  {
     // Память ролей внутри приложения (владелец 02.10.2026): «с чистого
     // листа; пусть сами пишут, а я вижу и редактирую; и файлы закидывать».
     // Запись — короткий факт/урок/предпочтение или загруженный файл
     // (его текст режется на куски в memory_chunks). Область видимости:
     // team — всем ролям, role — одной роли, project — ролям в проекте.
     // Эмбеддинг — Float32 BLOB для смыслового поиска; без него ищем по словам.
-    id: "083_role_memory",
+    id: "086_role_memory",
     description: "Память ролей: memories (факты, уроки, файлы) и memory_chunks (куски текста файлов) с эмбеддингами.",
     up: () => {
       db.exec(`

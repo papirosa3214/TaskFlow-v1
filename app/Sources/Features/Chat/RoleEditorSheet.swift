@@ -71,8 +71,13 @@ struct RoleEditorSheet: View {
         // `.ignoresSafeArea()` без ограничения edges.
         ZStack {
             Color.tfBackground.ignoresSafeArea()
-            VStack(alignment: .leading, spacing: TFSpacing.lg) {
+            ScrollView {
+              VStack(alignment: .leading, spacing: TFSpacing.lg) {
+                Text(mode.isEdit ? "Настройки агента" : "Новая роль")
+                    .tfText(.title)
+                    .foregroundStyle(Color.tfText)
                 fields
+                connections
                 if let errorText {
                     Text(errorText)
                         .tfText(.meta)
@@ -89,15 +94,15 @@ struct RoleEditorSheet: View {
                             }
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(TFTapFadeStyle())
                 }
-                Spacer(minLength: 0)
-                actions
             }
             .padding(.horizontal, TFSpacing.lg)
             .padding(.vertical, TFSpacing.lg)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .leading)
+              }
         }
+        .safeAreaInset(edge: .bottom) { actions }
         .sheet(isPresented: $showsRuntimeContext, onDismiss: {
             if let profile = mode.profile {
                 Task {
@@ -155,12 +160,12 @@ struct RoleEditorSheet: View {
                 Text("Инструкция")
                     .tfText(.meta)
                     .foregroundStyle(Color.tfSub)
-                Text("Системный промпт роли. Пусто — сервер читает файл scripts/role-prompts.")
+                Text("Правила работы агента. Пустое поле возвращает исходную инструкцию.")
                     .tfText(.caption)
                     .foregroundStyle(Color.tfDim)
                 multiline(text: $prompt, placeholder: "Системный промпт…")
                 if !prompt.isEmpty {
-                    Button("Сбросить на файл", action: { prompt = "" })
+                    Button("Вернуть исходную инструкцию", action: { prompt = "" })
                         .buttonStyle(.plain)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(Color.tfCoral)
@@ -170,30 +175,35 @@ struct RoleEditorSheet: View {
         }
     }
 
-    private var actions: some View {
-        VStack(spacing: TFSpacing.sm) {
-            if mode.isEdit, let profile = mode.profile {
-                Button("Как запускается роль") {
-                    showsRuntimeContext = true
+    @ViewBuilder
+    private var connections: some View {
+        if mode.isEdit, let profile = mode.profile {
+            TFCard(padding: 0) {
+                VStack(spacing: 0) {
+                    TFListRow(icon: "text.alignleft", iconStyle: .plain,
+                              title: "Как запускается роль", action: { showsRuntimeContext = true })
+                        .accessibilityHint("Открывает постоянные правила и источники запуска \(profile.title)")
+                    TFDivider(inset: TFSpacing.lg)
+                    TFListRow(icon: profile.isEnabled ? "archivebox" : "tray.and.arrow.up", iconStyle: .plain,
+                              title: profile.isEnabled ? "Отключить роль" : "Включить роль",
+                              action: { Task { await toggleEnabled(profile: profile) } })
+                        .disabled(isSaving || isTogglingEnabled)
                 }
-                .buttonStyle(.bordered)
-                .accessibilityHint("Открывает постоянные правила и источники запуска \(profile.title)")
             }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: TFSpacing.md) {
+            TFButton("Отмена", variant: .secondary) { dismiss() }
             TFButton(saveButtonTitle, icon: "checkmark", variant: .primary,
                      isEnabled: canSave && !isSaving && !isTogglingEnabled) {
                 Task { await save() }
             }
-            if mode.isEdit, let profile = mode.profile {
-                TFButton(
-                    profile.isEnabled ? "Отключить роль" : "Включить роль",
-                    icon: profile.isEnabled ? "archivebox" : "tray.and.arrow.up",
-                    variant: .outline,
-                    isEnabled: !isSaving && !isTogglingEnabled
-                ) {
-                    Task { await toggleEnabled(profile: profile) }
-                }
-            }
         }
+        .padding(.horizontal, TFSpacing.lg)
+        .padding(.vertical, TFSpacing.md)
+        .background(Color.tfBackground)
     }
 
     private var saveButtonTitle: String {
