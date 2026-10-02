@@ -173,13 +173,25 @@ async function callResearchTool(name: string, args: unknown): Promise<unknown> {
     // execFile бросает и на ненулевой exit code — наш --call всегда пишет
     // JSON в stdout ДО exit(1), так что содержательная ошибка обычно там же.
     stdout = err?.stdout ?? "";
-    if (!stdout) throw new ToolError(`research-инструмент ${name} не запустился: ${err?.message ?? String(err)}`);
+    if (!stdout) {
+      // Сырой текст (команда, stderr python) — в журнал; наружу — фраза
+      // для человека: агент пересказывает её владельцу как есть (MAK-13).
+      console.warn(`research-инструмент ${name} не запустился:`, err?.stderr || err?.message || err);
+      if (err?.killed || err?.signal === "SIGTERM") {
+        throw new ToolError(
+          `Источник не загрузился за ${RESEARCH_TOOL_TIMEOUT_MS / 1000} секунд — сайт или сервис ` +
+            "отвечает слишком медленно. Попробуйте позже или возьмите другой источник.",
+        );
+      }
+      throw new ToolError(`Инструмент ${name} сейчас не работает из-за внутренней ошибки сервера. Попробуйте ещё раз.`);
+    }
   }
   let parsed: { result?: unknown; error?: string };
   try {
     parsed = JSON.parse(stdout);
   } catch {
-    throw new ToolError(`research-инструмент ${name} вернул не JSON: ${stdout.slice(0, 500)}`);
+    console.warn(`research-инструмент ${name} вернул не JSON:`, stdout.slice(0, 500));
+    throw new ToolError(`Инструмент ${name} вернул непонятный ответ из-за внутренней ошибки. Попробуйте ещё раз.`);
   }
   if (parsed.error) throw new ToolError(parsed.error);
   return parsed.result;

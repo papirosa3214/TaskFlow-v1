@@ -452,7 +452,13 @@ def run(task_id: str) -> int:
     try:
         queries, plan_src = build_plan(title, description)
     except Exception as e:  # noqa: BLE001
-        comment(task_id, f"❌ Не смог построить план исследования: {e}")
+        log(f"план не построен: {e!r}")
+        comment(
+            task_id,
+            "❌ Не смог построить план исследования: модели не ответили или "
+            "ответили не по формату. Попробуйте запустить исследование ещё раз "
+            "через несколько минут.",
+        )
         return 1
     comment(
         task_id,
@@ -525,7 +531,12 @@ def run(task_id: str) -> int:
     try:
         markdown, synth_src = synthesize(title, description, sources, validation)
     except Exception as e:  # noqa: BLE001
-        comment(task_id, f"❌ Синтез не удался: {e}")
+        log(f"синтез не удался: {e!r}")
+        comment(
+            task_id,
+            "❌ Источники собраны, но составить отчёт не удалось: ни локальная, "
+            "ни облачная модель не ответили. Попробуйте запустить ещё раз позже.",
+        )
         return 1
 
     if len(markdown) < 40:
@@ -542,7 +553,12 @@ def run(task_id: str) -> int:
             }
         )
     except Exception as e:  # noqa: BLE001
-        comment(task_id, f"❌ Не смог сохранить отчёт: {e}")
+        log(f"отчёт не сохранён: {e!r}")
+        comment(
+            task_id,
+            "❌ Отчёт составлен, но сохранить его в карточку не удалось. "
+            "Попробуйте запустить исследование ещё раз.",
+        )
         return 1
 
     comment(
@@ -566,7 +582,12 @@ def main() -> int:
         log(f"конвейер упал: {e!r}")
         try:
             mcp.TOKEN = os.environ.get("TASKFLOW_TOKEN", "")
-            comment(args.task, f"❌ Конвейер остановился с ошибкой: {e}")
+            # MAK-13: сырой текст исключения — только в журнал (строкой выше).
+            comment(
+                args.task,
+                "❌ Исследование остановилось из-за внутренней ошибки. "
+                "Попробуйте запустить ещё раз; подробности — в журнале сервера.",
+            )
         except Exception:  # noqa: BLE001
             pass
         return 1

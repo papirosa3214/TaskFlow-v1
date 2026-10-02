@@ -291,11 +291,18 @@ export function registerAttachmentRoutes(app: FastifyInstance) {
       try {
         text = await extractAttachmentText(full, att.mime);
       } catch (e) {
-        const message =
-          e instanceof AttachmentTextError ? e.message : (e as Error).message;
-        return reply
-          .code(422)
-          .send({ error: `Не удалось прочитать файл: ${message}` });
+        // AttachmentTextError уже несёт текст для человека; всё прочее —
+        // непредвиденное, его подробности только в журнал (MAK-13).
+        if (e instanceof AttachmentTextError) {
+          return reply
+            .code(422)
+            .send({ error: `Не удалось прочитать файл. ${e.message}` });
+        }
+        req.log.error({ err: e }, "чтение текста вложения упало");
+        return reply.code(500).send({
+          error:
+            "Не удалось прочитать файл из-за внутренней ошибки сервера. Попробуйте ещё раз.",
+        });
       }
       if (text.trim().length < 3) {
         return reply.code(422).send({ error: "В файле не нашлось текста" });
@@ -313,9 +320,12 @@ export function registerAttachmentRoutes(app: FastifyInstance) {
         );
         return { tasks, chars: text.length };
       } catch (e) {
-        return reply
-          .code(502)
-          .send({ error: `Модель не справилась: ${(e as Error).message}` });
+        req.log.error({ err: e }, "модель не разобрала текст вложения в задачи");
+        return reply.code(502).send({
+          error:
+            "Текст из файла прочитан, но модель не смогла предложить по нему задачи — " +
+            "она не ответила или ответила не по формату. Попробуйте ещё раз через минуту.",
+        });
       }
     },
   );

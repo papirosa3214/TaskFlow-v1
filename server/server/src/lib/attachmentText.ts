@@ -30,7 +30,36 @@ function clamp(text: string): string {
   return t.length > MAX_OUT ? t.slice(0, MAX_OUT) : t;
 }
 
+/** Ошибка с текстом, который МОЖНО показать человеку: что случилось и что
+ *  делать. Техническая причина (stderr pdftotext/libreoffice) — только в
+ *  журнал сервера: раньше она уходила в баннер приложения как есть —
+ *  «Command failed: pdftotext -layout /…/uploads/… Syntax Error…» (MAK-13). */
 export class AttachmentTextError extends Error {}
+
+function failDetail(e: unknown): string {
+  const err = e as { stderr?: string; message?: string };
+  return (err?.stderr || err?.message || String(e)).trim().slice(-500);
+}
+
+function isTimeout(e: unknown): boolean {
+  const err = e as { killed?: boolean; signal?: string; code?: string };
+  return Boolean(err?.killed || err?.signal === "SIGTERM" || err?.code === "ETIMEDOUT");
+}
+
+function isMissingProgram(e: unknown): boolean {
+  return (e as { code?: string })?.code === "ENOENT";
+}
+
+const TOO_BIG =
+  "Файл слишком большой — не успели прочитать его за отведённое время. " +
+  "Разделите его на части поменьше и приложите заново.";
+const NO_PROGRAM =
+  "На сервере не установлена программа для чтения таких файлов — " +
+  "передайте это администратору.";
+
+const DOC_BROKEN =
+  "Документ не открывается — возможно, он повреждён или защищён паролем. " +
+  "Откройте его у себя, пересохраните и приложите заново.";
 
 const WORD_MIME = [
   "application/msword",
@@ -57,8 +86,18 @@ export async function extractAttachmentText(
       );
       return clamp(stdout);
     } catch (e) {
+      console.warn(`pdftotext не прочитал ${path.basename(filePath)}:`, failDetail(e));
+      if (isTimeout(e)) throw new AttachmentTextError(TOO_BIG);
+      if (isMissingProgram(e)) throw new AttachmentTextError(NO_PROGRAM);
+      if (/password|encrypt/i.test(failDetail(e))) {
+        throw new AttachmentTextError(
+          "PDF защищён паролем — прочитать его не получается. " +
+            "Снимите защиту и приложите файл заново.",
+        );
+      }
       throw new AttachmentTextError(
-        `pdftotext не осилил файл: ${(e as Error).message}`,
+        "PDF-файл повреждён или это не совсем PDF — открыть его не получается. " +
+          "Откройте файл у себя, пересохраните («Сохранить как PDF») и приложите заново.",
       );
     }
   }
@@ -66,15 +105,24 @@ export async function extractAttachmentText(
   if (WORD_MIME.some((prefix) => m.startsWith(prefix))) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "att-txt-"));
     try {
-      await execFileAsync(
-        "soffice",
-        ["--headless", "--convert-to", "txt:Text", "--outdir", dir, filePath],
-        { maxBuffer: 32 * 1024 * 1024, timeout: 60_000 },
-      );
+      try {
+        await execFileAsync(
+          "soffice",
+          ["--headless", "--convert-to", "txt:Text", "--outdir", dir, filePath],
+          { maxBuffer: 32 * 1024 * 1024, timeout: 60_000 },
+        );
+      } catch (e) {
+        console.warn(`libreoffice не прочитал ${path.basename(filePath)}:`, failDetail(e));
+        if (isTimeout(e)) throw new AttachmentTextError(TOO_BIG);
+        if (isMissingProgram(e)) throw new AttachmentTextError(NO_PROGRAM);
+        throw new AttachmentTextError(DOC_BROKEN);
+      }
       const base = path.basename(filePath).replace(/\.[^.]+$/, "") + ".txt";
       const out = path.join(dir, base);
       if (!fs.existsSync(out)) {
-        throw new AttachmentTextError("libreoffice не создал текстовый файл");
+        // libreoffice молча не конвертирует битые и запароленные документы.
+        console.warn(`libreoffice не создал текст для ${path.basename(filePath)}`);
+        throw new AttachmentTextError(DOC_BROKEN);
       }
       return clamp(fs.readFileSync(out, "utf8"));
     } finally {
@@ -82,5 +130,8 @@ export async function extractAttachmentText(
     }
   }
 
-  throw new AttachmentTextError(`из ${mime} текст вытащить не умею`);
+  throw new AttachmentTextError(
+    "Из файлов такого типа текст пока не достаём — подойдут PDF, Word, " +
+      "OpenDocument, TXT и Markdown.",
+  );
 }

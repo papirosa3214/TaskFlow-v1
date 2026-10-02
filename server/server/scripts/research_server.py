@@ -149,7 +149,8 @@ def _call_once(name: str) -> int:
         print(json.dumps({"error": str(e)}, ensure_ascii=False))
         return 1
     except Exception as e:  # noqa: BLE001 — наружу понятный текст, не трассировка
-        print(json.dumps({"error": f"сбой инструмента {name}: {e}"}, ensure_ascii=False))
+        mcp.log(f"{name}: {e!r}")
+        print(json.dumps({"error": mcp.unexpected_tool_error(name)}, ensure_ascii=False))
         return 1
     print(json.dumps({"result": result}, ensure_ascii=False))
     return 0

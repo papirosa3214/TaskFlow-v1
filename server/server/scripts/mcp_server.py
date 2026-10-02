@@ -1156,6 +1156,106 @@ def t_structure_dictation(args):
 # (убираем меню/рекламу/скрипты, берём статью), второе — t_ocr (tesseract rus+eng,
 # PDF со сканом рендерим через pdftoppm).
 
+# Владелец, MAK-13: если источник не загрузился — человеку нужен ответ «что
+# случилось и что делать», а не сырой текст исключения на английском
+# (`HTTPSConnectionPool(host=..., port=443): Read timed out`, хвост stderr
+# yt-dlp, `Syntax Error (1234): Illegal character` от pdftotext). Эти тексты
+# дальше уходят в ленту задачи и в баннер приложения как есть. Поэтому
+# техническую причину пишем ТОЛЬКО в журнал (stderr), а наружу — фразу ниже.
+
+def _host_of(url: str) -> str:
+    try:
+        return urllib.parse.urlparse(url).hostname or url
+    except Exception:  # noqa: BLE001
+        return url
+
+
+def _explain_web_error(url: str, e: Exception) -> str:
+    """Сбой скачивания страницы → понятная фраза: что случилось и что делать."""
+    host = _host_of(url)
+    name = type(e).__name__
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    if status is None:
+        status = getattr(e, "code", None) if isinstance(e, urllib.error.HTTPError) else None
+    if "Timeout" in name or isinstance(e, TimeoutError):
+        return (f"Сайт {host} не ответил вовремя. Возможно, он перегружен или "
+                "временно недоступен — попробуйте позже или возьмите другую ссылку.")
+    if "SSL" in name:
+        return (f"Не удалось установить защищённое соединение с сайтом {host} "
+                "(проблема с его сертификатом). Возьмите другую ссылку на тот же материал.")
+    if isinstance(status, int):
+        if status == 404 or status == 410:
+            return (f"На сайте {host} такой страницы нет (ошибка {status}). "
+                    "Проверьте ссылку — возможно, страницу удалили или перенесли.")
+        if status in (401, 403):
+            return (f"Сайт {host} не пускает к странице (ошибка {status}): нужен вход "
+                    "или он закрыт от автоматического чтения. Скопируйте нужный текст "
+                    "вручную или возьмите другой источник.")
+        if status == 429:
+            return (f"Сайт {host} временно ограничил запросы (ошибка 429). "
+                    "Попробуйте позже.")
+        if status >= 500:
+            return (f"Сайт {host} сейчас сбоит (ошибка {status}). Это на его стороне — "
+                    "попробуйте позже.")
+        return f"Сайт {host} отказал в загрузке страницы (ошибка {status})."
+    if "Connection" in name or isinstance(e, (urllib.error.URLError, OSError)):
+        return (f"Не удалось связаться с сайтом {host}: он не отвечает или адрес "
+                "написан с ошибкой. Проверьте ссылку и попробуйте ещё раз позже.")
+    if "InvalidURL" in name or "MissingSchema" in name or "InvalidSchema" in name:
+        return f"Ссылка «{url}» выглядит неправильной — проверьте её."
+    return (f"Не удалось загрузить страницу с сайта {host}. "
+            "Попробуйте позже или возьмите другую ссылку.")
+
+
+def _explain_youtube_error(stderr: str, returncode: int) -> str:
+    """stderr yt-dlp → понятная фраза. Пустой stderr при коде 0 и без файлов
+    субтитров — честное «у видео нет субтитров»."""
+    s = stderr or ""
+    low = s.lower()
+    if "confirm your age" in low or "age-restricted" in low:
+        return "Видео с возрастным ограничением — YouTube не отдаёт его без входа в аккаунт."
+    if "sign in to confirm" in low or "not a bot" in low:
+        return ("YouTube сейчас не пускает сервер — просит подтвердить, что это "
+                "не робот. Дело не в видео: попробуйте позже, а если повторяется — "
+                "нужно сменить сеть/прокси сервера.")
+    if "private video" in low:
+        return "Видео закрытое (приватное) — без доступа владельца текст из него не получить."
+    if ("video unavailable" in low or "has been removed" in low
+            or "this video is not available" in low or "is not available in your country" in low):
+        return ("Видео недоступно: его удалили, скрыли или оно закрыто для нашей "
+                "страны. Проверьте ссылку в браузере.")
+    if "is not a valid url" in low or "unsupported url" in low or "incomplete youtube id" in low:
+        return "Ссылка не похожа на видео YouTube — проверьте, что она ведёт на конкретный ролик."
+    if "http error 429" in low or "too many requests" in low:
+        return "YouTube временно ограничил запросы с сервера. Попробуйте через несколько минут."
+    if returncode != 0 and (
+            "timed out" in low or "unable to download webpage" in low
+            or "connection" in low or "name or service not known" in low):
+        return ("Не удалось связаться с YouTube: сеть сервера не отвечает. "
+                "Попробуйте позже.")
+    if returncode != 0 and s.strip():
+        return ("Не удалось получить субтитры видео: YouTube вернул ошибку. "
+                "Попробуйте позже или возьмите другое видео.")
+    return ("У этого видео нет субтитров — ни авторских, ни автоматических, "
+            "поэтому текст из него не получить. Возьмите другое видео "
+            "или приложите расшифровку файлом.")
+
+
+def _explain_pdf_error(stderr: str) -> str:
+    low = (stderr or "").lower()
+    if "incorrect password" in low or "encrypted" in low or "password" in low:
+        return ("PDF защищён паролем — прочитать его не получается. "
+                "Снимите защиту и приложите файл заново.")
+    return ("PDF-файл повреждён или это не совсем PDF — открыть его не получается. "
+            "Откройте файл у себя, пересохраните («Сохранить как PDF») и приложите заново.")
+
+
+def unexpected_tool_error(name: str) -> str:
+    """Непредвиденный сбой инструмента — без трассировки и английского."""
+    return (f"Инструмент {name} не справился из-за внутренней ошибки. "
+            "Попробуйте ещё раз; подробности записаны в журнал сервера.")
+
+
 def _html_to_markdown(html: str) -> str:
     """HTML → чистый markdown: выбрасываем скрипты, стили, навигацию, подвалы
     и формы; берём основную статью (article/main, иначе самый текстовый div)."""
@@ -1183,7 +1283,7 @@ def t_web_get(args):
     """Скачать страницу и вернуть её основное содержимое чистым markdown."""
     url = str(args.get("url") or "").strip()
     if not (url.startswith("http://") or url.startswith("https://")):
-        raise TaskFlowError("нужен http(s)-адрес")
+        raise TaskFlowError("Нужна ссылка на страницу, начинающаяся с http:// или https://")
     import requests
     try:
         resp = requests.get(url, timeout=40, headers={
@@ -1192,7 +1292,8 @@ def t_web_get(args):
         })
         resp.raise_for_status()
     except Exception as e:  # noqa: BLE001 — наружу понятный текст
-        raise TaskFlowError(f"не удалось скачать {url}: {e}")
+        log(f"web_get {url}: {e!r}")
+        raise TaskFlowError(_explain_web_error(url, e)) from e
     ctype = (resp.headers.get("content-type") or "").lower()
     if "html" in ctype or "xml" in ctype or not ctype:
         text = _html_to_markdown(resp.text)
@@ -1229,9 +1330,26 @@ def t_ocr(args):
                 f"{BASE}/api/attachments/{att_id}",
                 headers={"Authorization": f"Bearer {TOKEN}"},
             )
-            with urllib.request.urlopen(req, timeout=60) as r:
-                data = r.read()
-                ctype = (r.headers.get("Content-Type") or "").split(";")[0]
+            try:
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    data = r.read()
+                    ctype = (r.headers.get("Content-Type") or "").split(";")[0]
+            except urllib.error.HTTPError as e:
+                log(f"ocr: вложение {att_id} → {e.code}")
+                if e.code in (404, 410):
+                    raise TaskFlowError(
+                        "Вложение не найдено — возможно, его удалили из задачи."
+                    ) from e
+                raise TaskFlowError(
+                    f"Не удалось скачать вложение из TaskFlow (ошибка {e.code}). "
+                    "Попробуйте ещё раз."
+                ) from e
+            except Exception as e:  # noqa: BLE001
+                log(f"ocr: вложение {att_id}: {e!r}")
+                raise TaskFlowError(
+                    "Не удалось скачать вложение из TaskFlow: сервер не ответил. "
+                    "Попробуйте ещё раз."
+                ) from e
             ext = mimetypes.guess_extension(ctype) or ".bin"
             path = os.path.join(work, "src" + ext)
             with open(path, "wb") as f:
@@ -1244,6 +1362,12 @@ def t_ocr(args):
             txt = subprocess.run(["pdftotext", "-layout", path, "-"],
                                  capture_output=True, text=True, timeout=120)
             text = (txt.stdout or "").strip()
+            # Битый/запароленный PDF: pdftotext падает с ненулевым кодом.
+            # Рендер в картинки на таком файле упадёт так же — дальше не идём,
+            # а честно говорим, что с файлом (MAK-13).
+            if txt.returncode != 0 and not text:
+                log(f"ocr: pdftotext код {txt.returncode}: {(txt.stderr or '').strip()[-500:]}")
+                raise TaskFlowError(_explain_pdf_error(txt.stderr or ""))
             if len(text) < 40:
                 subprocess.run(
                     ["pdftoppm", "-r", "200", "-png", path, os.path.join(work, "p")],
@@ -1262,7 +1386,10 @@ def t_ocr(args):
             text = (out.stdout or "").strip()
             pages = 1
         else:
-            raise TaskFlowError(f"распознавание для {ext or 'без расширения'} не поддержано")
+            raise TaskFlowError(
+                f"Файлы типа {ext or 'без расширения'} распознавать не умею — "
+                "подойдут PDF и картинки (PNG, JPG и т. п.)."
+            )
 
         return {
             "text": text[:cap],
@@ -1270,6 +1397,18 @@ def t_ocr(args):
             "pages": pages,
             "truncated": len(text) > cap,
         }
+    except subprocess.TimeoutExpired as e:
+        log(f"ocr: таймаут {e.cmd[0] if e.cmd else ''} ({e.timeout} с)")
+        raise TaskFlowError(
+            "Файл распознаётся слишком долго — вероятно, он очень большой. "
+            "Разделите его на части поменьше и приложите заново."
+        ) from e
+    except FileNotFoundError as e:
+        log(f"ocr: нет программы распознавания: {e}")
+        raise TaskFlowError(
+            "На сервере не установлена программа распознавания документов — "
+            "передайте это администратору."
+        ) from e
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -1404,7 +1543,7 @@ def t_youtube(args):
     """Транскрипт видео YouTube в текст (ручные субтитры, иначе авто)."""
     url = str(args.get("url") or "").strip()
     if not url:
-        raise TaskFlowError("нужен url")
+        raise TaskFlowError("Нужна ссылка на видео YouTube.")
     langs = str(args.get("langs") or "ru,en")
     cap = int(args.get("max_chars") or 24000)
 
@@ -1415,21 +1554,33 @@ def t_youtube(args):
 
     work = tempfile.mkdtemp(prefix="tf-yt-")
     try:
-        meta = subprocess.run(
-            ["yt-dlp", "--skip-download", "--extractor-args",
-             "youtube:player_client=web,mweb", "--print", "%(title)s", url],
-            capture_output=True, text=True, timeout=60,
-        )
-        title = (meta.stdout or "").strip().splitlines()[0] if meta.stdout.strip() else ""
+        try:
+            meta = subprocess.run(
+                ["yt-dlp", "--skip-download", "--extractor-args",
+                 "youtube:player_client=web,mweb", "--print", "%(title)s", url],
+                capture_output=True, text=True, timeout=60,
+            )
+            title = (meta.stdout or "").strip().splitlines()[0] if meta.stdout.strip() else ""
 
-        subs = subprocess.run(
-            ["yt-dlp", "--skip-download", "--extractor-args",
-             "youtube:player_client=web,mweb",
-             "--write-subs", "--write-auto-subs",
-             "--sub-langs", langs, "--sub-format", "vtt", "--convert-subs", "vtt",
-             "-o", os.path.join(work, "s.%(ext)s"), url],
-            capture_output=True, text=True, timeout=240,
-        )
+            subs = subprocess.run(
+                ["yt-dlp", "--skip-download", "--extractor-args",
+                 "youtube:player_client=web,mweb",
+                 "--write-subs", "--write-auto-subs",
+                 "--sub-langs", langs, "--sub-format", "vtt", "--convert-subs", "vtt",
+                 "-o", os.path.join(work, "s.%(ext)s"), url],
+                capture_output=True, text=True, timeout=240,
+            )
+        except subprocess.TimeoutExpired as e:
+            log(f"youtube {url}: таймаут yt-dlp ({e.timeout} с)")
+            raise TaskFlowError(
+                "YouTube не ответил вовремя — попробуйте позже."
+            ) from e
+        except FileNotFoundError as e:
+            log(f"youtube: yt-dlp не найден: {e}")
+            raise TaskFlowError(
+                "На сервере не установлена программа для чтения YouTube (yt-dlp) — "
+                "передайте это администратору."
+            ) from e
         files = sorted(glob.glob(os.path.join(work, "*.vtt")))
         if not files:
             # Владелец 30.09.2026: раньше здесь молча врали «нет субтитров»
@@ -1437,20 +1588,15 @@ def t_youtube(args):
             # что код result скачивания вообще не смотрел. Найдено живьём:
             # видео Стива Джобса (Stanford, точно с субтитрами) тоже давало
             # эту же фразу — настоящая причина была в stderr, которую никто
-            # не читал. Теперь при пустом files разбираем stderr сами: если
-            # похоже на антибот-блок YouTube — говорим прямо, не выдаём его
-            # за «у видео нет субтитров» (это разные, несмежные причины и
-            # разные действия в ответ — ждать не поможет прокси починить).
+            # не читал. Теперь при пустом files разбираем stderr сами и
+            # различаем причины: антибот-блок, закрытое/удалённое видео, сеть,
+            # настоящее отсутствие субтитров — это разные действия в ответ.
+            # MAK-13: сам хвост stderr наружу больше не отдаём — он только в
+            # журнал; человеку — фраза «что случилось и что делать».
             stderr = (subs.stderr or "").strip()
-            if "Sign in to confirm" in stderr or "not a bot" in stderr:
-                raise TaskFlowError(
-                    "YouTube требует подтверждения «я не бот» с этого IP/сети — "
-                    "не про субтитры конкретного видео, антибот-блок. "
-                    f"yt-dlp: {stderr.splitlines()[-1][:300] if stderr else ''}"
-                )
-            if subs.returncode != 0 and stderr:
-                raise TaskFlowError(f"yt-dlp не смог получить субтитры (код {subs.returncode}): {stderr.splitlines()[-1][:300]}")
-            raise TaskFlowError("у видео нет субтитров (ни ручных, ни авто)")
+            if stderr:
+                log(f"youtube {url}: yt-dlp код {subs.returncode}: {stderr[-800:]}")
+            raise TaskFlowError(_explain_youtube_error(stderr, subs.returncode))
         with open(files[0], encoding="utf-8", errors="ignore") as f:
             text = _vtt_to_text(f.read())
         return {
@@ -2167,8 +2313,9 @@ def handle(msg):
         except KeyError as e:
             text, is_error = f"не хватает обязательного параметра {e}", True
         except Exception as e:  # инструмент не должен ронять сервер
+            # Сырой текст исключения — только в журнал (MAK-13).
             log(f"{name}: {e!r}")
-            text, is_error = f"сбой инструмента {name}: {e}", True
+            text, is_error = unexpected_tool_error(name), True
         return result(rid, {"content": [{"type": "text", "text": text}], "isError": is_error})
 
     return error(rid, -32601, f"метод не поддержан: {method}")
