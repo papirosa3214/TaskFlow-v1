@@ -2881,6 +2881,43 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    // Вложенность задач — ровно один уровень (владелец 02.10.2026: «чтобы
+    // сломаться не могло никак»). Проверки в API дают понятный отказ, а эти
+    // триггеры — последняя линия: любой код, пишущий в tasks (маршрут,
+    // импорт, агент, будущая правка), получит отказ от самой базы.
+    //   • родитель не может быть сам дочерним;
+    //   • задача не может быть родителем самой себе;
+    //   • задача с дочерними не может стать дочерней.
+    // Уже существующие нарушения (если были) не трогаем — сервер пишет их
+    // в журнал при старте (lib/taskHierarchy.ts → hierarchyViolations).
+    id: "084_task_hierarchy_one_level",
+    description: "Триггеры: вложенность задач — один уровень (родитель не дочерний, задача с дочерними не становится дочерней).",
+    up: () => {
+      db.exec(`
+        CREATE TRIGGER IF NOT EXISTS tasks_hierarchy_insert
+        BEFORE INSERT ON tasks
+        WHEN NEW.parent_id IS NOT NULL
+        BEGIN
+          SELECT RAISE(ABORT, 'task_hierarchy: задача не может быть родительской сама себе')
+            WHERE NEW.parent_id = NEW.id;
+          SELECT RAISE(ABORT, 'task_hierarchy: родительская задача сама дочерняя — вложенность одна')
+            WHERE (SELECT parent_id FROM tasks WHERE id = NEW.parent_id) IS NOT NULL;
+        END;
+        CREATE TRIGGER IF NOT EXISTS tasks_hierarchy_update
+        BEFORE UPDATE OF parent_id ON tasks
+        WHEN NEW.parent_id IS NOT NULL AND NEW.parent_id IS NOT OLD.parent_id
+        BEGIN
+          SELECT RAISE(ABORT, 'task_hierarchy: задача не может быть родительской сама себе')
+            WHERE NEW.parent_id = NEW.id;
+          SELECT RAISE(ABORT, 'task_hierarchy: родительская задача сама дочерняя — вложенность одна')
+            WHERE (SELECT parent_id FROM tasks WHERE id = NEW.parent_id) IS NOT NULL;
+          SELECT RAISE(ABORT, 'task_hierarchy: у задачи есть свои дочерние — дочерней она стать не может')
+            WHERE EXISTS (SELECT 1 FROM tasks WHERE parent_id = NEW.id);
+        END;
+      `);
+    },
+  },
 ];
 
 /**

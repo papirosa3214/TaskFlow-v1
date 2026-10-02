@@ -1,4 +1,5 @@
 import { startSecretaryVoiceBridge } from "./runtime/secretaryVoiceBridge.js";
+import { hierarchyViolations } from "./lib/taskHierarchy.js";
 import { pathToFileURL } from "url";
 import fs from "fs";
 import path from "path";
@@ -575,6 +576,19 @@ if (isMain) {
         if (resumed || blocked) console.log(`[plan] после рестарта: продолжено ${resumed}, остановлено ${blocked}`);
       })
       .catch((error) => console.error("[plan] восстановление брошенных узлов не удалось:", error));
+    // Вложенность задач — один уровень (миграция 084). Нарушения, созданные
+    // до правила, не исправляем молча — называем их в журнале.
+    try {
+      const violations = hierarchyViolations();
+      if (violations.length) {
+        console.warn(
+          `[tasks] вложенность глубже одного уровня у ${violations.length} задач (созданы до правила): ` +
+            violations.slice(0, 10).map((v) => `«${v.title}» ${v.id}`).join(", "),
+        );
+      }
+    } catch (error) {
+      console.error("[tasks] проверка вложенности не удалась:", error);
+    }
     stopVoiceBridge = await startSecretaryVoiceBridge(app);
     console.log(`🚀 TaskFlow API running at ${addr}`);
   });
