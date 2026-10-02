@@ -550,24 +550,27 @@ struct TaskFamilyEdgeTabs: View {
     var body: some View {
         VStack(spacing: Self.spacing) {
             ForEach(remaining, id: \.element.id) { index, member in
-                // Кнопка остаётся ради VoiceOver и идентификаторов XCUITest;
-                // пальцем тап ловит распознаватель колонки ниже.
-                Button {
-                    select(member.id)
-                } label: {
-                    TaskFamilyTabShape(attachedEdge: side)
-                        .frame(width: Self.expandedWidth, height: slotHeight)
-                        .shadow(color: Color.black.opacity(0.3), radius: 8, x: 5 * sign)
-                        .overlay {
-                            if hovered == member.id { TaskFamilyTabLabel(familyIndex: index) }
-                        }
-                        // Выдвигается сдвигом, а не шириной: анимация
-                        // смещения не пересчитывает раскладку на каждом кадре.
-                        .offset(x: hovered == member.id ? 0 : -sign * (Self.expandedWidth - Self.restingWidth))
-                        .frame(width: Self.hitWidth, alignment: side == .trailing ? .trailing : .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
+                // Не Button: жест дочерней кнопки в SwiftUI важнее жеста
+                // колонки, кнопка забирала касание, и вытягивание пропадало —
+                // работал только тап (владелец 02.10.2026: «нет выдвижения,
+                // только нажимать»). Всё касание — тап и протяжку — ловит
+                // распознаватель колонки ниже; для VoiceOver и XCUITest
+                // закладка остаётся кнопкой через accessibility-трейт и
+                // действие (XCUITest-тап приходит тем же касанием).
+                TaskFamilyTabShape(attachedEdge: side)
+                    .frame(width: Self.expandedWidth, height: slotHeight)
+                    .shadow(color: Color.black.opacity(0.3), radius: 8, x: 5 * sign)
+                    .overlay {
+                        if hovered == member.id { TaskFamilyTabLabel(familyIndex: index) }
+                    }
+                    // Выдвигается сдвигом, а не шириной: анимация
+                    // смещения не пересчитывает раскладку на каждом кадре.
+                    .offset(x: hovered == member.id ? 0 : -sign * (Self.expandedWidth - Self.restingWidth))
+                    .frame(width: Self.hitWidth, alignment: side == .trailing ? .trailing : .leading)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { select(member.id) }
                 .opacity(tabOpacity(member.id))
                 .offset(x: drag.pullingID == member.id ? 0 : (side == .trailing ? drag.tabsShift : drag.leadingShift))
                 .accessibilityLabel(side == .leading ? "Родительская карточка: \(member.title)" : member.title)
