@@ -1,23 +1,43 @@
 import SwiftUI
 import UIKit
 
+/// Куда ведёт вытягивание. Семья — родитель и его дети (02.10.2026,
+/// владелец: «закладки — это дети, а как вернуться к родителю?»):
+/// справа лежат только дети, вглубь — справа налево; слева — родитель,
+/// назад — слева направо, как системный свайп «назад».
+enum TaskFamilyPullDirection {
+    /// К ребёнку: входящая карточка выезжает справа поверх текущей.
+    case forward
+    /// К родителю: текущая карточка уезжает вправо, открывая родителя под ней.
+    case back
+
+    static func toward(_ id: String, parentID: String?) -> TaskFamilyPullDirection {
+        id == parentID ? .back : .forward
+    }
+}
+
 /// Состояние вытягивания соседней карточки семьи.
 ///
 /// Отдельный `@Observable`, а не `@State` экрана (02.10.2026): смещение
 /// меняется на каждом кадре жеста, и когда оно жило в `@State` корня,
 /// SwiftUI каждый кадр заново считал body обеих карточек — два `List` с
 /// секциями и редакторами. Теперь смещение читают только маленькие
-/// модификаторы (`TaskFamilyRecede`, `TaskFamilyIncoming`) и колонка
+/// модификаторы (`TaskFamilyOutgoing`, `TaskFamilyIncoming`) и колонки
 /// закладок; корень перерисовывается лишь при захвате и завершении.
 @MainActor
 @Observable
 final class TaskFamilyPull {
-    /// Насколько входящая карточка вытянута из-за правого края (0…ширина).
+    /// Пройденный путь перехода (0…ширина): насколько въехал ребёнок
+    /// справа или насколько уехала вправо текущая карточка по пути к родителю.
     var offset: CGFloat = 0
-    /// Сдвиг остальных закладок вправо: уезжают вместе с жестом и
+    var direction: TaskFamilyPullDirection = .forward
+    /// Сдвиг закладок детей вправо: уезжают вместе с жестом и
     /// возвращаются своей пружиной уже после перехода.
     var tabsShift: CGFloat = 0
-    /// Закладка, за которую взялись; пока nil — входящей карточки на экране нет.
+    /// Сдвиг закладки родителя влево: уходит под кромку, пока въезжает
+    /// ребёнок, и выезжает обратно уже на новой карточке.
+    var leadingShift: CGFloat = 0
+    /// Закладка, за которую взялись; пока nil — второй карточки на экране нет.
     var pullingID: String?
     /// Карточка, с которой начали тянуть: по ней считается слот закладки,
     /// приклеенной к входящей карточке, даже когда выбор уже сменился.
@@ -27,21 +47,28 @@ final class TaskFamilyPull {
     /// Карточки уже поменялись местами, а превью ещё лежит сверху — до
     /// первого кадра настоящей карточки под ним.
     var handoff = false
-    /// Вертикальный сдвиг активной закладки слева: после перехода она
-    /// приезжает из своего слота к центру, а не прыгает туда.
-    var activeMarkerShift: CGFloat = 0
     /// Счётчики для тактильного отклика: захват и приземление карточки.
     var captureTick = 0
     var landTick = 0
 
+    /// Доля пройденного пути; на передаче карточек — ноль, чтобы новая
+    /// настоящая карточка сразу стояла без эффектов.
     func progress(width: CGFloat) -> CGFloat {
-        guard width > 0, !handoff else { return 0 }
+        guard !handoff else { return 0 }
+        return rawProgress(width: width)
+    }
+
+    func rawProgress(width: CGFloat) -> CGFloat {
+        guard width > 0 else { return 0 }
         return min(1, max(0, offset / width))
     }
 
     func follow(_ value: CGFloat) {
         offset = value
         tabsShift = min(40, value * 0.45)
+        if direction == .forward {
+            leadingShift = -min(TaskFamilyEdgeTabs.expandedWidth, value * 0.45)
+        }
     }
 }
 
@@ -53,6 +80,7 @@ struct TaskFormScreen: View {
     /// Загрузка соседних карточек: переход дожидается её через `await`,
     /// без опроса `isLoadingTask` раз в 30 мс.
     @State private var loads: [String: Task<Void, Never>] = [:]
+    /// Родитель первым, за ним его дети (см. `loadScreen` в `TaskFormScreen.swift`).
     @State private var family: [ApiTask] = []
     @State private var incoming: TaskFormViewModel?
     @State private var drag = TaskFamilyPull()
@@ -78,6 +106,7 @@ struct TaskFormScreen: View {
         GeometryReader { geometry in
             let width = geometry.size.width
             let height = geometry.size.height
+            let forward = drag.direction == .forward
             ZStack {
                 Color.tfBackground.ignoresSafeArea()
                 TaskCardContent(model: model, expanding: expanding, family: family,
@@ -88,12 +117,13 @@ struct TaskFormScreen: View {
                     initialExpandedSections: expandedSections(for: model),
                     onExpandedSectionsChanged: { storeExpandedSections($0, for: model) })
                     .id(selectedCardID ?? "new")
-                    .modifier(TaskFamilyRecede(drag: drag, width: width, reduceMotion: reduceMotion))
+                    .modifier(TaskFamilyOutgoing(drag: drag, width: width, reduceMotion: reduceMotion))
                     .overlay {
                         if drag.pullingID != nil || drag.settling {
                             Color.clear.contentShape(Rectangle()).onTapGesture {}.accessibilityHidden(true)
                         }
                     }
+                    .zIndex(1)
                 if let incoming, drag.pullingID != nil {
                     TaskCardContent(model: incoming, expanding: false, family: [],
                         onFamilyLoaded: { _ in }, onFamilySelected: { _ in },
@@ -103,35 +133,37 @@ struct TaskFormScreen: View {
                         .background(Color.tfBackground.ignoresSafeArea())
                         // Скругление обычным непрерывным прямоугольником: его
                         // Core Animation режет дёшево, а правые углы и так
-                        // уходят под скругления шторки и экрана.
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        // уходят под скругления шторки и экрана. Родитель
+                        // лежит под уходящей карточкой целиком — ему не нужно.
+                        .clipShape(RoundedRectangle(cornerRadius: forward ? 14 : 0, style: .continuous))
                         .overlay(alignment: .leading) {
-                            TaskFamilyLeadingShadow()
-                            attachedPullHandle(height: height)
+                            if forward {
+                                TaskFamilyLeadingShadow()
+                                attachedPullHandle(height: height)
+                            }
                         }
                         .modifier(TaskFamilyIncoming(drag: drag, width: width, reduceMotion: reduceMotion))
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
+                        // К родителю: он лежит ПОД уходящей карточкой. На
+                        // передаче превью поднимается наверх, пока под ним
+                        // собирается настоящая карточка.
+                        .zIndex(!forward && !drag.handoff ? 0 : 2)
                 }
             }
             .clipped()
             .overlay(alignment: .trailing) {
-                if expandedSheet && family.count > 1 {
-                    TaskFamilyEdgeTabs(members: family, selectedID: selectedCardID,
+                if expandedSheet && childTabs.contains(where: { $0.element.id != selectedCardID }) {
+                    TaskFamilyEdgeTabs(members: childTabs, side: .trailing, selectedID: selectedCardID,
                         height: height, width: width, drag: drag,
                         prepare: prepare, capture: beginPull, select: select, cancel: resetPull)
                 }
             }
             .overlay(alignment: .leading) {
-                if expandedSheet, family.count > 1,
-                   let active = family.first(where: { $0.id == selectedCardID }) {
-                    TaskFamilyActiveMarker(
-                        height: TaskFamilyEdgeTabs.slotHeight(height: height, count: max(1, family.count - 1)),
-                        drag: drag
-                    )
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("Открытая карточка: \(active.title)")
-                    .accessibilityIdentifier("task.family.active.\(active.id)")
+                if expandedSheet, let parent = parentTab, parent.element.id != selectedCardID {
+                    TaskFamilyEdgeTabs(members: [parent], side: .leading, selectedID: selectedCardID,
+                        height: height, width: width, drag: drag,
+                        prepare: prepare, capture: beginPull, select: select, cancel: resetPull)
                 }
             }
             .background(TaskSheetExpansionProbe { expanded in
@@ -140,9 +172,22 @@ struct TaskFormScreen: View {
                 }
                 if !expanded && !drag.settling && drag.pullingID != nil { resetPull() }
             })
+            .sensoryFeedback(.impact(weight: .light), trigger: drag.captureTick)
             .sensoryFeedback(.impact(weight: .light, intensity: 0.8), trigger: drag.landTick)
         }
         .background(Color.tfBackground.ignoresSafeArea())
+    }
+
+    /// Закладка родителя — только когда семья действительно есть.
+    private var parentTab: (offset: Int, element: ApiTask)? {
+        guard family.count > 1, let parent = family.first else { return nil }
+        return (0, parent)
+    }
+
+    /// Закладки детей с их номером в семье: номер на закладке не меняется
+    /// от того, какая карточка сейчас открыта.
+    private var childTabs: [(offset: Int, element: ApiTask)] {
+        Array(Array(family.enumerated()).dropFirst())
     }
 
     private func receiveFamily(_ members: [ApiTask]) {
@@ -184,10 +229,11 @@ struct TaskFormScreen: View {
         incoming = cardModel(for: id)
     }
 
-    /// Закладку захватили: входящая карточка появляется у правого края.
+    /// Закладку захватили: вторая карточка появляется на экране.
     private func beginPull(_ id: String) {
         guard id != selectedCardID, !drag.settling else { return }
         incoming = cardModel(for: id)
+        drag.direction = .toward(id, parentID: family.first?.id)
         drag.originID = selectedCardID
         drag.pullingID = id
         drag.captureTick += 1
@@ -210,8 +256,9 @@ struct TaskFormScreen: View {
         Task {
             guard let candidate = await loadedCardModel(for: id) else { resetPull(); return }
             incoming = candidate
-            // Тап по закладке, без вытягивания: карточка въезжает целиком.
+            // Тап по закладке, без вытягивания: переход проигрывается целиком.
             if drag.pullingID == nil {
+                drag.direction = .toward(id, parentID: family.first?.id)
                 drag.originID = selectedCardID
                 drag.pullingID = id
             }
@@ -222,7 +269,7 @@ struct TaskFormScreen: View {
                           completionCriteria: .logicallyComplete) {
                 drag.follow(width)
             } completion: {
-                land(candidate, id: id, height: height)
+                land(candidate, id: id)
             }
         }
     }
@@ -231,13 +278,11 @@ struct TaskFormScreen: View {
     /// собирается под превью, и превью снимается только через пару кадров,
     /// когда под ним уже нарисовано то же самое. Раньше подмена шла в одном
     /// кадре, и на последнем шаге перехода карточка могла мигнуть.
-    private func land(_ candidate: TaskFormViewModel, id: String, height: CGFloat) {
-        let markerShift = attachedHandleCenterOffset(height: height) ?? 0
+    private func land(_ candidate: TaskFormViewModel, id: String) {
         var instant = Transaction(animation: nil)
         instant.disablesAnimations = true
         withTransaction(instant) {
             drag.handoff = true
-            drag.activeMarkerShift = markerShift
             model = candidate
             selectedCardID = id
         }
@@ -249,12 +294,14 @@ struct TaskFormScreen: View {
                 drag.pullingID = nil
                 drag.originID = nil
                 drag.offset = 0
+                drag.direction = .forward
                 drag.handoff = false
                 drag.settling = false
             }
+            // Закладки новой карточки выезжают на место своей пружиной.
             withAnimation(reduceMotion ? .easeOut(duration: 0.12) : .spring(duration: 0.34, bounce: 0.06)) {
                 drag.tabsShift = 0
-                drag.activeMarkerShift = 0
+                drag.leadingShift = 0
             }
         }
     }
@@ -269,6 +316,7 @@ struct TaskFormScreen: View {
             guard !drag.settling, drag.offset == 0 else { return }
             drag.pullingID = nil
             drag.originID = nil
+            drag.direction = .forward
         }
     }
 
@@ -282,17 +330,10 @@ struct TaskFormScreen: View {
         expandedSectionsByCard[id] = sections
     }
 
-    /// Закладки справа без той карточки, с которой начали тянуть.
+    /// Закладки детей справа без той карточки, с которой начали тянуть.
     private var pullRemaining: [(offset: Int, element: ApiTask)] {
         let origin = drag.originID ?? selectedCardID
-        return Array(family.enumerated()).filter { $0.element.id != origin }
-    }
-
-    private func attachedHandleCenterOffset(height: CGFloat) -> CGFloat? {
-        let remaining = pullRemaining
-        guard let pullingID = drag.pullingID,
-              let slot = remaining.firstIndex(where: { $0.element.id == pullingID }) else { return nil }
-        return TaskFamilyEdgeTabs.slotCenterOffset(index: slot, count: remaining.count, height: height)
+        return childTabs.filter { $0.element.id != origin }
     }
 
     @ViewBuilder
@@ -313,26 +354,25 @@ struct TaskFormScreen: View {
     }
 }
 
-/// Уходящая карточка отступает вглубь: чуть уменьшается и уходит под серую
-/// вуаль, во второй половине жеста — ещё и под цвет фона.
+/// Карточка уходит вглубь: чуть уменьшается и уходит под серую вуаль, во
+/// второй половине пути — ещё и под цвет фона.
 ///
 /// Раньше здесь был `blur` всего `List` и `opacity` на всю карточку: оба —
 /// отдельный проход отрисовки вне экрана на каждом кадре. Масштаб и
 /// полупрозрачная заливка поверх стоят почти ничего, а глубину дают ту же.
-private struct TaskFamilyRecede: ViewModifier {
-    let drag: TaskFamilyPull
-    let width: CGFloat
+private struct TaskFamilyRecessed: ViewModifier {
+    /// 0 — карточка на своём месте, 1 — полностью ушла вглубь.
+    let amount: CGFloat
     let reduceMotion: Bool
 
     func body(content: Content) -> some View {
-        let progress = drag.progress(width: width)
-        let late = max(0, (progress - 0.55) / 0.45)
+        let late = max(0, (amount - 0.55) / 0.45)
         content
-            .scaleEffect(reduceMotion ? 1 : 1 - 0.045 * progress)
+            .scaleEffect(reduceMotion ? 1 : 1 - 0.045 * amount)
             .overlay {
-                if progress > 0 {
+                if amount > 0 {
                     ZStack {
-                        Color.tfCard2.opacity((reduceMotion ? 0.06 : 0.16) * progress)
+                        Color.tfCard2.opacity((reduceMotion ? 0.06 : 0.16) * amount)
                         Color.tfBackground.opacity(reduceMotion ? 0 : 0.18 * late)
                     }
                     .allowsHitTesting(false)
@@ -341,16 +381,42 @@ private struct TaskFamilyRecede: ViewModifier {
     }
 }
 
-/// Положение входящей карточки — единственное, что меняется на кадре жеста.
+/// Текущая карточка во время перехода. К ребёнку — уходит вглубь под
+/// въезжающий лист. К родителю — сама уезжает вправо с тенью у левой
+/// кромки, открывая родителя под собой.
+private struct TaskFamilyOutgoing: ViewModifier {
+    let drag: TaskFamilyPull
+    let width: CGFloat
+    let reduceMotion: Bool
+
+    func body(content: Content) -> some View {
+        let progress = drag.progress(width: width)
+        let back = drag.direction == .back && drag.pullingID != nil && !drag.handoff
+        content
+            .modifier(TaskFamilyRecessed(amount: back ? 0 : progress, reduceMotion: reduceMotion))
+            .overlay(alignment: .leading) {
+                if back && !reduceMotion { TaskFamilyLeadingShadow() }
+            }
+            .offset(x: back && !reduceMotion ? drag.offset : 0)
+            .opacity(back && reduceMotion ? 1 - progress : 1)
+    }
+}
+
+/// Вторая карточка перехода — единственное, что меняется на кадре жеста.
+/// Ребёнок въезжает справа; родитель под уходящей карточкой возвращается
+/// из глубины.
 private struct TaskFamilyIncoming: ViewModifier {
     let drag: TaskFamilyPull
     let width: CGFloat
     let reduceMotion: Bool
 
     func body(content: Content) -> some View {
+        let progress = drag.rawProgress(width: width)
+        let forward = drag.direction == .forward
         content
-            .offset(x: reduceMotion ? 0 : max(0, width - drag.offset))
-            .opacity(reduceMotion ? min(1, drag.offset / max(1, width)) : 1)
+            .modifier(TaskFamilyRecessed(amount: forward || drag.handoff ? 0 : 1 - progress, reduceMotion: reduceMotion))
+            .offset(x: forward && !reduceMotion ? max(0, width - drag.offset) : 0)
+            .opacity(forward && reduceMotion ? progress : 1)
     }
 }
 
@@ -381,8 +447,8 @@ private struct TaskFamilyLeadingShadow: View {
 /// закладка выглядела грязной; теперь это фон шторки плюс тот же
 /// полутон сверху — цвет прежний, тень под ним не видна.
 private struct TaskFamilyTabShape: View {
-    /// Сторона, которой закладка прилегает к кромке: справа у закладок
-    /// соседей, слева у закладки открытой карточки.
+    /// Сторона, которой закладка прилегает к кромке: справа у детей,
+    /// слева у родителя.
     let attachedEdge: HorizontalEdge
 
     var body: some View {
@@ -411,24 +477,8 @@ private struct TaskFamilyTabLabel: View {
     }
 }
 
-/// Закладка открытой карточки у левой кромки.
-private struct TaskFamilyActiveMarker: View {
-    let height: CGFloat
-    let drag: TaskFamilyPull
-
-    var body: some View {
-        Color.clear.frame(width: 32, height: height)
-            .overlay(alignment: .leading) {
-                TaskFamilyTabShape(attachedEdge: .leading)
-                    .frame(width: TaskFamilyEdgeTabs.expandedWidth, height: height)
-                    .shadow(color: Color.black.opacity(0.3), radius: 8, x: 5)
-                    .offset(x: -18)
-            }
-            .offset(y: drag.activeMarkerShift)
-    }
-}
-
-/// A transparent edge hit area; only a few points of each bookmark remain visible.
+/// Колонка закладок у кромки: справа — дети, слева — родитель. Видны
+/// только узкие края; остальное — прозрачная зона касания.
 struct TaskFamilyEdgeTabs: View {
     static let restingWidth: CGFloat = 10
     static let expandedWidth: CGFloat = 26
@@ -437,11 +487,15 @@ struct TaskFamilyEdgeTabs: View {
     static let hitWidth: CGFloat = 32
     /// Горизонтальный путь, после которого закладку считаем захваченной.
     static let captureDistance: CGFloat = 18
-    /// Окно, за которое входящая карточка догоняет палец после захвата.
+    /// Окно, за которое карточка догоняет палец после захвата.
     static let catchUpDuration: CFTimeInterval = 0.16
     static let fillColor = Color.tfCard2.opacity(0.48)
 
-    let members: [ApiTask]
+    /// Карточки колонки с их номером в семье.
+    let members: [(offset: Int, element: ApiTask)]
+    /// Кромка колонки: `.trailing` — дети, тянуть влево; `.leading` —
+    /// родитель, тянуть вправо.
+    let side: HorizontalEdge
     let selectedID: String?
     let height: CGFloat
     let width: CGFloat
@@ -456,7 +510,7 @@ struct TaskFamilyEdgeTabs: View {
     @State private var catchUpUntil: CFTimeInterval = 0
 
     private var remaining: [(offset: Int, element: ApiTask)] {
-        Array(members.enumerated()).filter { $0.element.id != selectedID }
+        members.filter { $0.element.id != selectedID }
     }
 
     static func slotHeight(height: CGFloat, count: Int) -> CGFloat {
@@ -471,20 +525,25 @@ struct TaskFamilyEdgeTabs: View {
     }
 
     /// Куда докатится карточка, если отпустить её на скорости `velocity`
-    /// (pt/с, к центру экрана — положительная): та же проекция, что у
+    /// (pt/с, по ходу перехода — положительная): та же проекция, что у
     /// `UIScrollView` с обычным замедлением.
     static func projectedDistance(velocity: CGFloat) -> CGFloat {
         let rate: CGFloat = 0.998 // UIScrollView.DecelerationRate.normal
         return velocity / 1000 * rate / (1 - rate)
     }
 
-    /// Отпустили захваченную закладку: открыть соседа или вернуть назад.
-    /// `velocity` — скорость пальца по X (влево — отрицательная).
+    /// Отпустили захваченную закладку: открыть карточку или вернуть назад.
+    /// `velocity` — скорость пальца по ходу перехода (pt/с): положительная —
+    /// туда же, куда тянули, отрицательная — обратно.
     static func shouldCommit(pull: CGFloat, velocity: CGFloat, width: CGFloat) -> Bool {
-        // Явный бросок обратно вправо отменяет даже далёкое вытягивание.
-        guard velocity < 300 else { return false }
-        return pull > width * 0.28 || pull + projectedDistance(velocity: -velocity) > width * 0.5
+        // Явный бросок обратно отменяет даже далёкое вытягивание.
+        guard velocity > -300 else { return false }
+        return pull > width * 0.28 || pull + projectedDistance(velocity: velocity) > width * 0.5
     }
+
+    /// Направление перехода для этой колонки: дети тянутся влево, родитель —
+    /// вправо. Смещение пальца, умноженное на него, — путь перехода.
+    private var sign: CGFloat { side == .trailing ? -1 : 1 }
 
     private var slotHeight: CGFloat { Self.slotHeight(height: height, count: remaining.count) }
 
@@ -496,32 +555,39 @@ struct TaskFamilyEdgeTabs: View {
                 Button {
                     select(member.id)
                 } label: {
-                    TaskFamilyTabShape(attachedEdge: .trailing)
+                    TaskFamilyTabShape(attachedEdge: side)
                         .frame(width: Self.expandedWidth, height: slotHeight)
-                        .shadow(color: Color.black.opacity(0.3), radius: 8, x: -5)
+                        .shadow(color: Color.black.opacity(0.3), radius: 8, x: 5 * sign)
                         .overlay {
                             if hovered == member.id { TaskFamilyTabLabel(familyIndex: index) }
                         }
                         // Выдвигается сдвигом, а не шириной: анимация
                         // смещения не пересчитывает раскладку на каждом кадре.
-                        .offset(x: hovered == member.id ? 0 : Self.expandedWidth - Self.restingWidth)
-                        .frame(width: Self.hitWidth, alignment: .trailing)
+                        .offset(x: hovered == member.id ? 0 : -sign * (Self.expandedWidth - Self.restingWidth))
+                        .frame(width: Self.hitWidth, alignment: side == .trailing ? .trailing : .leading)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .opacity(drag.pullingID == member.id ? 0 : 1)
-                .offset(x: drag.pullingID == member.id ? 0 : drag.tabsShift)
-                .accessibilityLabel(member.title)
+                .opacity(tabOpacity(member.id))
+                .offset(x: drag.pullingID == member.id ? 0 : (side == .trailing ? drag.tabsShift : drag.leadingShift))
+                .accessibilityLabel(side == .leading ? "Родительская карточка: \(member.title)" : member.title)
                 .accessibilityIdentifier("task.family.\(member.id)")
             }
         }
         .frame(width: Self.hitWidth)
         .contentShape(Rectangle())
-        .overlay(alignment: .topTrailing) { titleBubble }
+        .overlay(alignment: side == .trailing ? .topTrailing : .topLeading) { titleBubble }
         .gesture(TaskFamilyEdgeGesture(onChange: track, onEnd: finish))
         .animation(reduceMotion ? nil : .spring(duration: 0.22, bounce: 0.05), value: hovered)
         .sensoryFeedback(.selection, trigger: hovered) { _, new in new != nil }
-        .sensoryFeedback(.impact(weight: .light), trigger: drag.captureTick)
+    }
+
+    /// Закладка ребёнка, за которую взялись, приклеена к въезжающей
+    /// карточке — в колонке её прячем. Закладка родителя остаётся на месте
+    /// и тает в первые пункты пути: дальше на экране сам родитель.
+    private func tabOpacity(_ id: String) -> Double {
+        guard drag.pullingID == id else { return 1 }
+        return side == .trailing ? 0 : Double(max(0, 1 - drag.offset / 48))
     }
 
     /// Название закладки под пальцем — как подпись скраббера в Фото:
@@ -530,6 +596,7 @@ struct TaskFamilyEdgeTabs: View {
     private var titleBubble: some View {
         if let hovered, captured == nil, drag.pullingID == nil,
            let slot = remaining.firstIndex(where: { $0.element.id == hovered }) {
+            let anchor: UnitPoint = side == .trailing ? .trailing : .leading
             Text(remaining[slot].element.title)
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Color.tfText)
@@ -538,9 +605,9 @@ struct TaskFamilyEdgeTabs: View {
                 .padding(.vertical, 7)
                 .background(.regularMaterial, in: Capsule())
                 .shadow(color: Color.black.opacity(0.18), radius: 10, y: 2)
-                .frame(width: width * 0.62, height: slotHeight, alignment: .trailing)
-                .offset(x: -(Self.hitWidth + 8), y: CGFloat(slot) * (slotHeight + Self.spacing))
-                .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: .trailing)))
+                .frame(width: width * 0.62, height: slotHeight, alignment: side == .trailing ? .trailing : .leading)
+                .offset(x: sign * (Self.hitWidth + 8), y: CGFloat(slot) * (slotHeight + Self.spacing))
+                .transition(.opacity.combined(with: .scale(scale: 0.92, anchor: anchor)))
                 .id(hovered)
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
@@ -554,15 +621,16 @@ struct TaskFamilyEdgeTabs: View {
 
     private func track(_ location: CGPoint, _ translation: CGSize) {
         guard !drag.settling, !remaining.isEmpty else { return }
+        let distance = sign * translation.width
         if captured == nil {
             let id = memberID(at: location.y)
             if hovered != id { hovered = id; prepare(id) }
-            guard -translation.width > Self.captureDistance else { return }
+            guard distance > Self.captureDistance else { return }
             captured = id
             catchUpUntil = CACurrentMediaTime() + Self.catchUpDuration
             capture(id)
         }
-        let pull = min(width, max(0, -translation.width))
+        let pull = min(width, max(0, distance))
         // Захват случается, когда палец уже ушёл на 18 pt. Чтобы карточка
         // не прыгнула на это расстояние, первые доли секунды она догоняет
         // палец короткой интерактивной пружиной, потом идёт за ним вплотную.
@@ -585,7 +653,7 @@ struct TaskFamilyEdgeTabs: View {
             }
             return
         }
-        if !cancelled, Self.shouldCommit(pull: drag.offset, velocity: velocity, width: width) {
+        if !cancelled, Self.shouldCommit(pull: drag.offset, velocity: sign * velocity, width: width) {
             select(target)
         } else {
             cancel()

@@ -96,10 +96,10 @@ final class TaskFamilyNavigationTests: XCTestCase {
         XCTAssertTrue(TaskFamilyEdgeTabs.shouldCommit(pull: 130, velocity: 0, width: width))
         // Чуть потянули и отпустили — возвращаем.
         XCTAssertFalse(TaskFamilyEdgeTabs.shouldCommit(pull: 60, velocity: 0, width: width))
-        // Короткий, но быстрый бросок влево — открываем.
-        XCTAssertTrue(TaskFamilyEdgeTabs.shouldCommit(pull: 60, velocity: -800, width: width))
-        // Бросок обратно вправо отменяет даже далёкое вытягивание.
-        XCTAssertFalse(TaskFamilyEdgeTabs.shouldCommit(pull: 300, velocity: 600, width: width))
+        // Короткий, но быстрый бросок по ходу перехода — открываем.
+        XCTAssertTrue(TaskFamilyEdgeTabs.shouldCommit(pull: 60, velocity: 800, width: width))
+        // Бросок обратно отменяет даже далёкое вытягивание.
+        XCTAssertFalse(TaskFamilyEdgeTabs.shouldCommit(pull: 300, velocity: -600, width: width))
     }
 
     func testPullKeepsOtherTabsShiftWithinLimit() {
@@ -111,6 +111,26 @@ final class TaskFamilyNavigationTests: XCTestCase {
         XCTAssertEqual(pull.progress(width: 400), 1, accuracy: 0.001)
         pull.handoff = true
         XCTAssertEqual(pull.progress(width: 400), 0, accuracy: 0.001)
+        XCTAssertEqual(pull.rawProgress(width: 400), 1, accuracy: 0.001)
+    }
+
+    /// Справа — дети, слева — родитель: к родителю переход идёт назад.
+    func testParentIsBackAndChildrenAreForward() {
+        XCTAssertEqual(TaskFamilyPullDirection.toward("parent", parentID: "parent"), .back)
+        XCTAssertEqual(TaskFamilyPullDirection.toward("child-2", parentID: "parent"), .forward)
+        XCTAssertEqual(TaskFamilyPullDirection.toward("child-2", parentID: nil), .forward)
+    }
+
+    /// Закладка родителя уходит под левую кромку, только пока въезжает
+    /// ребёнок; по пути к родителю её не трогает сдвиг — она тает сама.
+    func testParentTabSlidesAwayOnlyWhenGoingForward() {
+        let pull = TaskFamilyPull()
+        pull.follow(400)
+        XCTAssertEqual(pull.leadingShift, -TaskFamilyEdgeTabs.expandedWidth, accuracy: 0.001)
+        pull.leadingShift = 0
+        pull.direction = .back
+        pull.follow(400)
+        XCTAssertEqual(pull.leadingShift, 0, accuracy: 0.001)
     }
 
     private func makeAPI() -> APIClient {
