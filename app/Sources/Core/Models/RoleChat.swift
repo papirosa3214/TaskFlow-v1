@@ -59,9 +59,11 @@ public struct RoleChatMember: Decodable, Identifiable, Sendable {
     public let avatarColor: String?
     public let avatarURL: String?
     public let initials: String?
+    public let roleKey: String?
 
     enum CodingKeys: String, CodingKey {
         case id, name, initials
+        case roleKey = "role_key"
         case avatarColor = "avatar_color"
         case avatarURL = "avatar_url"
     }
@@ -297,9 +299,9 @@ struct RoleLiveTextPacer {
     private var stall: TimeInterval = 0
 
     static let minRate: Double = 40
-    static let maxRate: Double = 900
+    static let maxRate: Double = 320
     /// На сколько секунд экран в среднем отстаёт от сервера.
-    static let targetLag: TimeInterval = 0.4
+    static let targetLag: TimeInterval = 0.7
     /// Сколько ждать продолжения оборванного слова в конце снимка.
     static let tailWait: TimeInterval = 0.35
 
@@ -485,5 +487,29 @@ public struct RoleChatLiveTurn: Decodable, Sendable, Equatable {
             if case .thinking(let thinking) = item, thinking.isRunning { return thinking }
         }
         return nil
+    }
+}
+
+
+/// Selected before sending; retries retain the original mode.
+public enum RoleChatWorkMode: String, CaseIterable, Codable {
+    case work, plan, deepResearch = "deep_research"
+    var title: String {
+        switch self { case .work: "Работа"; case .plan: "Планирование"; case .deepResearch: "Глубокое исследование" }
+    }
+    var symbol: String {
+        switch self { case .work: "bolt"; case .plan: "list.bullet.clipboard"; case .deepResearch: "magnifyingglass" }
+    }
+    static func available(in chat: RoleChat) -> [Self] {
+        chat.members.contains { $0.roleKey == "researcher" || $0.id == "role_researcher" }
+            ? [.work, .plan, .deepResearch] : [.work, .plan]
+    }
+}
+
+extension RoleChatLiveTurn {
+    var playbackID: String { userID + ":" + (startedAt ?? "live") }
+    func completed(with message: RoleChatMessage) -> Self {
+        Self(chatID: chatID, userID: userID, name: name, startedAt: startedAt,
+             items: (message.steps?.items ?? []) + (message.text.isEmpty ? [] : [.text(message.text)]), thinking: nil)
     }
 }

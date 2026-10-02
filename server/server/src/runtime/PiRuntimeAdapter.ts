@@ -1,4 +1,6 @@
+import { chatModeInstruction, type ChatWorkMode } from "./chatWorkMode.js";
 import { chatInstructionArgs } from "./instructionResources.js";
+import { ensureRoleHome, prepareChatSessionDirectory } from "./roleHome.js";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -745,7 +747,7 @@ export const piRuntime: RuntimeAdapter = {
     const client = new RpcClient({
       cliPath: resolvePiCliPath(),
       cwd: input.cwd ?? process.cwd(),
-      ...(mcpConfigPath ? { args: ["--mcp-config", mcpConfigPath, ...await chatInstructionArgs(role,mcpConfigPath)] } : {}),
+      ...(mcpConfigPath ? { args: ["--mcp-config", mcpConfigPath, ...await chatInstructionArgs(role,mcpConfigPath,"work",input.cwd ?? process.cwd())] } : {}),
       provider,
       model,
       // NODE_USE_ENV_PROXY=1 — без него Pi встроенный fetch игнорирует
@@ -1033,6 +1035,7 @@ export async function modelExists(id: string): Promise<boolean> {
 /** Аргументы старта живой сессии Пи в чате. Никакого taskId — чат живёт
  *  отдельной осью, карточки и аренда остаются нетронутыми. */
 export interface StartChatRunInput {
+  mode?: ChatWorkMode;
   chatId: string;
   role: RoleName;
   /** id ролевой учётки (role_<role>) — будет автором сообщения-ответа. */
@@ -1209,10 +1212,13 @@ export async function startChatRun(
     // своей учёткой и своим набором инструментов, а не личным MCP-конфигом
     // владельца (владелец 25.09.2026: роли в чате — те же агенты, что и в
     // карточках, без ассоциации с Pi Agent).
-    mcpConfigPath = prepareRoleRunAccess(runId, role);
+    mcpConfigPath = prepareRoleRunAccess(runId, role, input.mode, input.chatId);
+    if (input.mode === "plan" && !mcpConfigPath) throw new Error("Планирование недоступно: не удалось применить ограничения инструментов");
+    const home = ensureRoleHome(role);
+    const sessionDirectory = await prepareChatSessionDirectory(role, input.chatId, input.sessionId);
     const args: string[] = [];
     if (mcpConfigPath) {
-      args.push("--mcp-config", mcpConfigPath, ...await chatInstructionArgs(role,mcpConfigPath));
+      args.push("--mcp-config", mcpConfigPath, ...await chatInstructionArgs(role,mcpConfigPath,input.mode));
     }
     if (input.sessionId) {
       // --session-id продолжает РОВНО ту сессию, что у нас в таблице.
@@ -1222,10 +1228,11 @@ export async function startChatRun(
       // ожиданием «следующее сообщение продолжает тот же контекст».
       args.push("--session-id", input.sessionId);
     }
+    args.push("--session-dir", sessionDirectory);
 
     const newClient = new RpcClient({
       cliPath: resolvePiCliPath(),
-      cwd: process.cwd(),
+      cwd: home.workspace,
       provider: resolvedProvider,
       model: resolvedModel,
       // NODE_USE_ENV_PROXY=1 — без него встроенный fetch Pi игнорирует
@@ -1258,9 +1265,26 @@ export async function startChatRun(
     });
     watchdog.catch(() => {});
 
+    // Итог последнего хода модели (как у задач — recordRunActivity): без
+    // него ошибка провайдера («Request timed out», 30.09.2026) давала
+    // пустой текст, и роль в чате просто молчала.
+    const turnState: { last: TurnResult | null } = { last: null };
+
     newClient.onEvent((event: JsonAgentSessionEvent) => {
       lastActivity = Date.now();
       const e = event as { type: string; toolCallId?: string };
+      const raw = event as unknown as { type: string; messages?: unknown; success?: unknown; finalError?: unknown };
+      if (raw.type === "agent_end") {
+        const turn = parseTurnResult(raw.messages);
+        if (turn) turnState.last = turn;
+      } else if (raw.type === "auto_retry_end") {
+        turnState.last = raw.success === false
+          ? {
+              stopReason: "error",
+              errorMessage: typeof raw.finalError === "string" ? raw.finalError : "retry_failed",
+            }
+          : null;
+      }
       if (e.type === "tool_execution_start" && e.toolCallId) {
         runningTools.add(e.toolCallId);
       } else if (e.type === "tool_execution_end" && e.toolCallId) {
@@ -1293,6 +1317,7 @@ export async function startChatRun(
 
     try {
       await newClient.start();
+      if (input.mode === "deep_research" && match.reasoning) await newClient.setThinkingLevel("high");
       // Сессия могла стартовать с нашим sessionId (resume) или с новым
       // (Pi создал сам). Реальный id берём через getState(), а не
       // session_start — тот же путь, что в startRun: getState()
@@ -1307,10 +1332,11 @@ export async function startChatRun(
       // тишины (он прерывает ход раньше, если роль замолчала).
       try {
         await Promise.race([
-          newClient.promptAndWait(input.prompt, undefined, timeoutMs),
+          newClient.promptAndWait(input.mode ? chatModeInstruction(input.mode) + "\n\n" + input.prompt : input.prompt, undefined, timeoutMs),
           watchdog,
         ]);
       } catch (error) {
+        if (run.cancelled) throw chatRunCancelledError();
         if (watchdogFired) throw watchdogFired;
         if (error instanceof Error && /^Timeout collecting events/.test(error.message)) {
           newClient.abort().catch(() => {});
@@ -1322,6 +1348,14 @@ export async function startChatRun(
         const text = await newClient.getLastAssistantText();
         finalText = (text ?? "").trim();
       } catch { /* нет ассистентского хода — оставим пустую строку */ }
+      if (run.cancelled) throw chatRunCancelledError();
+      const lastTurn = turnState.last;
+      if (!finalText && lastTurn?.stopReason === "error") {
+        throw Object.assign(
+          new Error(lastTurn.errorMessage || "модель вернула ошибку"),
+          { code: "CHAT_RUN_MODEL_ERROR" },
+        );
+      }
     } finally {
       clearInterval(idleTimer);
       // Останавливать процесс ОБЯЗАТЕЛЬНО, иначе каждый user-message
@@ -1364,6 +1398,27 @@ export async function cancelChatRun(runId: string): Promise<boolean> {
   activeChatRuns.delete(runId);
   releaseChatRoleLock(run.chatId, run.roleId);
   return true;
+}
+
+/** Ход, остановленный владельцем: вызывающая сторона кладёт в чат то,
+ *  что роль успела написать, а не сообщение об ошибке. */
+function chatRunCancelledError(): Error {
+  return Object.assign(new Error("ход остановлен владельцем"), {
+    code: "CHAT_RUN_CANCELLED",
+  });
+}
+
+/** Остановить идущие ходы в чате: всех ролей или одной (roleId). Кнопка
+ *  «Остановить» в окне чата. Возвращает число остановленных ходов. */
+export async function cancelChatRunsFor(chatId: string, roleId?: string): Promise<number> {
+  const runs = [...activeChatRuns.values()].filter(
+    (run) => run.chatId === chatId && (!roleId || run.roleId === roleId),
+  );
+  let stopped = 0;
+  for (const run of runs) {
+    if (await cancelChatRun(run.runId)) stopped += 1;
+  }
+  return stopped;
 }
 
 /** Тестовая утилита: сбросить in-memory карту активных чат-сессий и

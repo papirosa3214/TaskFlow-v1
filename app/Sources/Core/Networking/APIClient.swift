@@ -16,7 +16,9 @@ import os
 ///   `SessionStore` мог сразу разлогинить (§2.2: LAN-релогин веба нативу не
 ///   подходит, только «на выход»).
 public final class APIClient: Sendable {
-    public static let baseURL = URL(string: "http://192.168.1.110:3001")!
+    public static let baseURL = ProcessInfo.processInfo.environment["TASKFLOW_LINEAR_CARD_DEMO"] == "1"
+        ? URL(string: "http://127.0.0.1:3307")!
+        : URL(string: "http://192.168.1.110:3001")!
 
     private let session: URLSession
     private let decoder: JSONDecoder

@@ -24,17 +24,19 @@ public enum RealtimeEvent: Sendable {
     case notificationNew(ApiNotification)
     case chatNew(ApiChatMessage)
     case chatTyping(raw: JSONValue)
-    /// Новое сообщение в чате с ролями (`chat:new` с `chat_id`). Несём только
-    /// id чата: экран сам перечитывает ленту и список — формат строки у
-    /// новых чатов свой (`RoleChatMessage`), не `ApiChatMessage` канала.
-    case roleChatMessage(chatId: String)
+    /// Новое сообщение в чате с ролями (`chat:new` с `chat_id`). `message` —
+    /// готовое сообщение в формате истории (сервер с 01.10.2026 шлёт его
+    /// целиком): комната вставляет его сразу, без перечитывания ленты.
+    /// `nil` — старый сервер или неполная строка; тогда экран перечитывает.
+    case roleChatMessage(chatId: String, message: RoleChatMessage?)
     /// Роль готовит ответ в чате (`chats:typing`): `active` — начала/закончила.
     /// Сигнал даёт сервер ровно на время ответа роли (22.09.2026).
     case roleChatTyping(chatId: String, userId: String, name: String, active: Bool, tool: String?)
     /// Живой ход роли в чате (`chats:live`, 27.09.2026): снимок целиком —
-    /// текст по словам и шаги. `turn == nil` — ход закончился, ответ придёт
-    /// обычным `chat:new`.
-    case roleChatLive(chatId: String, userId: String, turn: RoleChatLiveTurn?)
+    /// текст по словам и шаги. `turn == nil` — ход закончился; `messageID` —
+    /// сообщение, которым лёг ответ (сервер шлёт его после `chat:new`, так
+    /// что готовый пузырь к этому моменту уже в ленте).
+    case roleChatLive(chatId: String, userId: String, turn: RoleChatLiveTurn?, messageID: String?)
     case serverError(message: String?)
     case unknown(type: String, raw: JSONValue)
 
@@ -46,6 +48,7 @@ public enum RealtimeEvent: Sendable {
         struct Message: Decodable { let chat_id: String? }
         let message: Message?
     }
+    private struct RoleMessageEnvelope: Decodable { let message: RoleChatMessage }
     private struct RoleTypingPayload: Decodable {
         let chat_id: String
         let user_id: String
@@ -57,6 +60,7 @@ public enum RealtimeEvent: Sendable {
         let chat_id: String
         let user_id: String
         let turn: RoleChatLiveTurn?
+        let message_id: String?
     }
 
     public static func parse(_ data: Data) -> RealtimeEvent? {
@@ -96,7 +100,8 @@ public enum RealtimeEvent: Sendable {
             // и могло попасть в открытую ленту канала координации.
             if let envelope = try? decoder.decode(ChatIDEnvelope.self, from: data),
                let chatId = envelope.message?.chat_id, !chatId.isEmpty {
-                return .roleChatMessage(chatId: chatId)
+                let full = try? decoder.decode(RoleMessageEnvelope.self, from: data).message
+                return .roleChatMessage(chatId: chatId, message: full)
             }
             guard let m = try? decoder.decode(ApiChatMessage.self, from: data) else {
                 return .unknown(type: envelope.type, raw: raw)
@@ -113,7 +118,7 @@ public enum RealtimeEvent: Sendable {
             guard let p = try? decoder.decode(RoleLivePayload.self, from: data) else {
                 return .unknown(type: envelope.type, raw: raw)
             }
-            return .roleChatLive(chatId: p.chat_id, userId: p.user_id, turn: p.turn)
+            return .roleChatLive(chatId: p.chat_id, userId: p.user_id, turn: p.turn, messageID: p.message_id)
         case "error":
             let payload = try? decoder.decode(ErrorPayload.self, from: data)
             return .serverError(message: payload?.message ?? payload?.error)

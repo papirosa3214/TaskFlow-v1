@@ -11,6 +11,61 @@ struct RoleReplyMarkdown: View {
     var fade: RoleTextFade?
 
     var body: some View {
+        let segments = ChatRichContent.split(text)
+        if segments.count == 1, case .markdown = segments[0] {
+            markdownBody(text)
+        } else if segments.isEmpty {
+            markdownBody(text)
+        } else {
+            // Таблицы, виджеты и артефакты (владелец 01.10.2026) — своими
+            // видами; текст между ними — как раньше. Хвост идущего ответа
+            // проявляется по всему тексту, а не у каждого куска отдельно.
+            let after = Self.charactersAfterSegments(segments)
+            VStack(alignment: .leading, spacing: TFSpacing.md) {
+                ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
+                    segmentView(segment, fade: fade?.shifted(by: after[index]))
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    static func charactersAfterSegments(_ segments: [ChatRichSegment]) -> [Int] {
+        var result = Array(repeating: 0, count: segments.count)
+        var sum = 0
+        for index in segments.indices.reversed() {
+            result[index] = sum
+            sum += ChatRichContent.characterCount(segments[index])
+        }
+        return result
+    }
+
+    @ViewBuilder
+    private func segmentView(_ segment: ChatRichSegment, fade: RoleTextFade?) -> some View {
+        switch segment {
+        case .markdown(let part):
+            RoleReplyMarkdown(text: part, color: color, fade: fade)
+        case .table(let table):
+            ChatTableView(table: table, color: color)
+        case .widget(let json):
+            ChatWidgetView(json: json)
+        case .html(let html):
+            ChatHTMLView(html: html)
+        case .pending(let kind):
+            HStack(spacing: TFSpacing.sm) {
+                ProgressView()
+                Text(kind == .html ? "Собираю интерактив…" : "Готовлю виджет…")
+                    .font(.subheadline)
+                    .foregroundStyle(Color.tfSub)
+            }
+            .padding(TFSpacing.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.tfCard, in: RoundedRectangle(cornerRadius: TFRadius.xl))
+        }
+    }
+
+    @ViewBuilder
+    private func markdownBody(_ text: String) -> some View {
         let blocks = Self.numbered(MarkdownParser.parse(text))
         let after = fade == nil ? [] : Self.charactersAfter(blocks.map(\.block))
         VStack(alignment: .leading, spacing: TFSpacing.sm) {
@@ -92,7 +147,8 @@ struct RoleReplyMarkdown: View {
             Divider()
         case .table:
             // Из текста таблицы парсер не собирает (только из заметок) —
-            // сюда не попадаем; на всякий случай показываем строки текстом.
+            // таблицы ответа разбирает ChatRichContent. На всякий случай
+            // показываем строки текстом.
             Text(block.runs.map(\.text).joined())
                 .foregroundStyle(color)
         }
@@ -134,4 +190,62 @@ struct RoleReplyMarkdown: View {
         }
         return result
     }
+}
+
+/// Таблица из ответа роли (`| a | b |`): шапка, чередование строк,
+/// выравнивание колонок из строки-разделителя, горизонтальная прокрутка для
+/// широких таблиц. Ячейки понимают инлайн-разметку (**жирный**, `код`, ссылки).
+struct ChatTableView: View {
+    let table: ChatTable
+    var color: Color = .tfText
+
+    /// Шире — перенос строки внутри ячейки, а не бесконечная колонка.
+    private static let maxCellWidth: CGFloat = 220
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
+                // Модификатор на самом GridRow превратил бы строку в одну
+                // ячейку — фон задаётся каждой ячейке.
+                GridRow {
+                    ForEach(Array(table.header.enumerated()), id: \.offset) { column, title in
+                        cell(title, column: column, background: Color.tfCard2)
+                            .font(.subheadline.weight(.semibold))
+                    }
+                }
+                ForEach(Array(table.rows.enumerated()), id: \.offset) { rowIndex, row in
+                    Divider().gridCellUnsizedAxes(.horizontal)
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { column, value in
+                            cell(value, column: column,
+                                 background: rowIndex.isMultiple(of: 2) ? Color.clear : Color.tfCard2.opacity(0.45))
+                                .font(.subheadline)
+                        }
+                    }
+                }
+            }
+            .background(Color.tfCard)
+            .clipShape(RoundedRectangle(cornerRadius: TFRadius.lg))
+            .overlay(RoundedRectangle(cornerRadius: TFRadius.lg).strokeBorder(Color.tfStroke, lineWidth: TFBorder.width))
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+    }
+
+    private func cell(_ text: String, column: Int, background: Color) -> some View {
+        let alignment = column < table.alignments.count ? table.alignments[column] : .leading
+        return Text(RoleReplyMarkdown.attributed(MarkdownParser.parseInline(text)))
+            .foregroundStyle(color)
+            .multilineTextAlignment(alignment == .trailing ? .trailing : alignment == .center ? .center : .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: Self.maxCellWidth,
+                   alignment: alignment == .trailing ? .trailing : alignment == .center ? .center : .leading)
+            .padding(.horizontal, TFSpacing.md)
+            .padding(.vertical, TFSpacing.sm)
+            .frame(maxWidth: .infinity, maxHeight: .infinity,
+                   alignment: alignment == .trailing ? .trailing : alignment == .center ? .center : .leading)
+            .background(background)
+            .gridColumnAlignment(alignment == .trailing ? .trailing : alignment == .center ? .center : .leading)
+    }
+
+
 }

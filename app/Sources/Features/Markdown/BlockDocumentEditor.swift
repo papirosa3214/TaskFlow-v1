@@ -450,6 +450,8 @@ struct BlockDocumentEditor: View {
     /// просит компактную типографику (описание задачи); заметки её не задают.
     var baseFontOverride: UIFont? = nil
     var textColor: UIColor = UIColor(Color.tfText)
+    /// Явное включение редактора карандашом. По умолчанию фокус не запрашивается.
+    var requestsFocus: Bool = false
     /// Документ изменился — вызывающий ставит сюда своё сохранение.
     var onEdit: () -> Void = {}
 
@@ -483,6 +485,12 @@ struct BlockDocumentEditor: View {
                     )
                 )
             }
+        }
+        .task(id: requestsFocus) {
+            guard requestsFocus, let first = blocks.first else { return }
+            try? await Task.sleep(for: .milliseconds(30))
+            guard !Task.isCancelled else { return }
+            controllerStore.controller(for: first.id).focus(cursorAt: .end)
         }
         .onChange(of: pendingFocus) { _, pending in
             guard let pending else { return }
@@ -739,4 +747,16 @@ struct TableDeleteRequest {
     enum Target { case row, column }
     let target: Target
     let cellID: UUID
+}
+
+/// Only task cards opt out of editing; notes retain their existing behavior.
+private struct DocumentTextEditableKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var documentTextEditable: Bool {
+        get { self[DocumentTextEditableKey.self] }
+        set { self[DocumentTextEditableKey.self] = newValue }
+    }
 }

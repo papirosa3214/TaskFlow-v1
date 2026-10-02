@@ -45,10 +45,10 @@ public extension APIClient {
         return response.turns
     }
 
-    func sendRoleChatMessage(chatID: String, text: String, attachmentIDs: [String] = []) async throws -> RoleChatMessage {
-        struct Body: Encodable { let text: String; let attachment_ids: [String] }
+    func sendRoleChatMessage(chatID: String, text: String, attachmentIDs: [String] = [], mode: RoleChatWorkMode = .work) async throws -> RoleChatMessage {
+        struct Body: Encodable { let text: String; let attachment_ids: [String]; let work_mode: RoleChatWorkMode }
         let response: RoleChatMessageEnvelope = try await request(
-            .post, "/chats/\(chatID)/messages", body: Body(text: text, attachment_ids: attachmentIDs)
+            .post, "/chats/\(chatID)/messages", body: Body(text: text, attachment_ids: attachmentIDs, work_mode: mode)
         )
         return response.message
     }
@@ -62,6 +62,16 @@ public extension APIClient {
             .post, "/chats/\(chatID)/new-session", body: Body(role_id: roleID)
         )
         return response.message
+    }
+
+    /// Остановить идущий ход роли (или всех ролей, если `roleID == nil`).
+    /// Написанное ролью до остановки сервер кладёт в чат обычным ответом.
+    @discardableResult
+    func stopRoleChat(chatID: String, roleID: String? = nil) async throws -> Int {
+        let body: [String: JSONValue] = roleID.map { ["role_id": .string($0)] } ?? [:]
+        struct Result: Decodable { let stopped: Int }
+        let response: Result = try await request(.post, "/chats/\(chatID)/stop", body: body)
+        return response.stopped
     }
 
     /// Сервер использует тот же raw-upload, что `/chat/attachments`.

@@ -176,115 +176,50 @@ enum AgentWorkDate {
     }
 }
 
-/// Строка задачи — состав и порядок как у `TaskRow.tsx`: проект → аватар+
-/// название → описание (2 строки) → статус агента → ряд бейджей (подзадачи,
-/// приоритет, просрочка/срок, метки). Без свайпа — на этом экране веб-версия
-/// строки тоже кликабельна целиком, без «Изменить»/«Удалить».
+/// Общая трёхстрочная раскладка списков; аватар сохраняет загрузку фото.
+/// Без свайпа — строка кликабельна целиком.
 struct AgentWorkTaskRow: View {
     let task: ApiTask
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .top, spacing: TFSpacing.md) {
-            if task.assigneeId != nil {
-                AgentWorkAvatarView(
-                    urlPath: task.assigneeAvatarUrl,
-                    initials: task.assigneeInitials ?? "?",
-                    tint: Color(hex: task.assigneeColor ?? TFHexDefault.unassigned),
-                    size: TFAvatar.Size.taskList.rawValue,
-                    userID: task.assigneeId
-                )
-                .padding(.top, task.projectName == nil ? 0 : 16)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                if let projectName = task.projectName {
-                    Text("#\(projectName)")
-                        .tfText(.caption)
-                        .foregroundStyle(Color(hex: task.projectColor ?? TFHexDefault.unassigned))
-                        .lineLimit(1)
+            TFTaskRowContent(title: task.title, description: task.description, isDone: task.status == .completed) {
+                if task.assigneeId != nil {
+                    AgentWorkAvatarView(urlPath: task.assigneeAvatarUrl, initials: task.assigneeInitials ?? "?", tint: Color(hex: task.assigneeColor ?? TFHexDefault.unassigned), size: TFAvatar.Size.taskList.rawValue, userID: task.assigneeId)
                 }
-
-                HStack(spacing: TFSpacing.sm) {
-                    Text(task.title)
-                        .tfText(.body)
-                        .foregroundStyle(task.status == .completed ? Color.tfSub : Color.tfText)
-                        .strikethrough(task.status == .completed)
-                        .lineLimit(1)
-                }
-
-                if let description = task.description, !description.isEmpty {
-                    Text(description)
-                        .tfText(.action)
-                        .foregroundStyle(Color.tfSub)
-                        .lineLimit(2)
-                }
-
-                if let statusText = AgentWorkStateTag.text(task) {
+            } metadata: {
+                TFTaskStructureIndicators(priority: TaskPriority(rawValue: task.priority), subtasksDone: task.subtasks.isEmpty ? nil : task.subtasks.count { $0.done }, subtasksTotal: task.subtasks.isEmpty ? nil : task.subtasks.count, childrenCount: task.childrenCount, hasCollaborationPlan: task.hasCollaborationPlan)
+                if isOverdue, let due = task.dueDate {
+                    TFPill("Просрочено, \(AgentWorkDate.formatDueLabel(due))", color: .tfRed, backgroundOpacity: 0.15)
+                } else if let due = task.dueDate {
                     HStack(spacing: 3) {
-                        if let icon = AgentWorkStateTag.icon(task) {
-                            Image(systemName: icon)
-                                .font(.system(size: 10))
-                        }
-                        Text(statusText)
+                        Text(AgentWorkDate.formatDueLabel(due))
+                        Text("· \(AgentWorkDate.formatDaysLeft(due))")
+                        .foregroundStyle(AgentWorkDate.daysUntil(due) <= 3 ? Color.tfOrange : Color.tfDim)
                     }
-                    .tfText(.meta)
+                    .tfText(.caption)
+                    .foregroundStyle(Color.tfSub)
+                    .padding(.horizontal, TFSpacing.sm)
+                    .padding(.vertical, 2)
+                    .background(Color.tfCard)
+                    .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
+                }
+                if let status = AgentWorkStateTag.text(task) {
+                    HStack(spacing: 3) {
+                        if let icon = AgentWorkStateTag.icon(task) { Image(systemName: icon) }
+                        Text(status)
+                    }
                     .foregroundStyle(AgentWorkStateTag.color(task))
+                    .layoutPriority(-1)
                 }
-
-                if hasBadges {
-                    HStack(spacing: TFSpacing.xs) {
-                        if !task.subtasks.isEmpty {
-                            let done = task.subtasks.count { $0.done }
-                            TFPill("\(done)/\(task.subtasks.count)", color: .tfSub, solidBackground: .tfCard)
-                        }
-                        if task.childrenCount > 0 {
-                            HStack(spacing: 2) {
-                                Image(systemName: "person.2")
-                                Text("\(task.childrenCount)")
-                            }
-                            .tfText(.caption)
-                            .foregroundStyle(Color.tfSub)
-                            .padding(.horizontal, TFSpacing.sm)
-                            .padding(.vertical, 2)
-                            .background(Color.tfCard)
-                            .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
-                        }
-                        if task.hasCollaborationPlan {
-                            TFAccentTag("ПЛАН", color: .tfPurple)
-                        }
-                        if isOverdue, let due = task.dueDate {
-                            TFPill("Просрочено, \(AgentWorkDate.formatDueLabel(due))", color: .tfRed, backgroundOpacity: 0.15)
-                        } else if let due = task.dueDate {
-                            HStack(spacing: 3) {
-                                Text(AgentWorkDate.formatDueLabel(due))
-                                Text("· \(AgentWorkDate.formatDaysLeft(due))")
-                                    .foregroundStyle(AgentWorkDate.daysUntil(due) <= 3 ? Color.tfOrange : Color.tfDim)
-                            }
-                            .tfText(.caption)
-                            .foregroundStyle(Color.tfSub)
-                            .padding(.horizontal, TFSpacing.sm)
-                            .padding(.vertical, 2)
-                            .background(Color.tfCard)
-                            .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
-                        }
-                        ForEach(task.labels, id: \.id) { label in
-                            TFLabelPill(label.name, color: Color(hex: label.color ?? TFHexDefault.unassigned))
-                        }
-                    }
+                if let project = task.projectName {
+                    Text("#\(project)").foregroundStyle(Color(hex: task.projectColor ?? TFHexDefault.unassigned)).layoutPriority(-1)
+                }
+                ForEach(task.labels, id: \.id) { label in
+                    TFLabelPill(label.name, color: Color(hex: label.color ?? TFHexDefault.unassigned)).layoutPriority(-1)
                 }
             }
-                Spacer(minLength: 0)
-                // Приоритет — стопкой шевронов справа, как в остальных строках.
-                if let priority = TaskPriority(rawValue: task.priority) {
-                    TFPriorityArrows(priority)
-                }
-            }
-            .padding(.top, 9)
-            .padding(.bottom, 12)
-            .padding(.horizontal, TFSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(TFTapRowStyle())
     }
@@ -292,10 +227,5 @@ struct AgentWorkTaskRow: View {
     private var isOverdue: Bool {
         guard let due = task.dueDate, task.status == .active else { return false }
         return AgentWorkDate.daysUntil(due) < 0
-    }
-
-    private var hasBadges: Bool {
-        !task.subtasks.isEmpty || task.priority <= 3 || task.dueDate != nil || !task.labels.isEmpty
-            || task.childrenCount > 0 || task.hasCollaborationPlan
     }
 }

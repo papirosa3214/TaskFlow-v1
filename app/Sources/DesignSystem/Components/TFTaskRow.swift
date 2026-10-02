@@ -1,17 +1,8 @@
 import SwiftUI
 
-// Строка задачи — spec/DESIGN-TOKENS.md §4 «Строка задачи» + spec/SCREENS-1.md §3.3.
-// Порядок содержимого сверху вниз (буквально по спеке, не додумано):
-// 1. бейдж проекта — #Название, цвет проекта, БЕЗ заливки фона;
-// 2. заголовок: (опц.) аватар 20px слева + название;
-// 3. описание — максимум 2 строки;
-// 4. (опц.) статус агента плоским текстом без подложки;
-// 5. ряд бейджей: подзадачи N/M → приоритет (P1–P3, P4 не рисуется) →
-//    «Просрочено» → срок(+«· N дн.») → метки.
-//
-// Чекбокса завершения задачи в строке НЕТ — убран целиком 18.08.2026 (владелец).
-// Приоритет читается только флагом-иконкой, «выполнено» — зачёркиванием названия.
-// Завершение — отдельной полноширинной кнопкой на экране самой задачи, не тут.
+// Строка списка: название → одна строка описания → показатели.
+// Приоритет — флаг в нижнем ряду; план — person.2; дочерние — ветвление.
+// Решение владельца 01.10.2026. Чекбокса завершения здесь нет.
 public struct TFTaskRowModel {
     public var projectName: String?
     public var projectColor: Color?
@@ -88,94 +79,135 @@ public struct TFTaskRow: View {
 
     public var body: some View {
         Button(action: action) {
-            // Асимметричный паддинг 9 сверху / 12 снизу (не 16/16) — намеренно
-            // (спека): визуальный воздух над/под текстом иначе не совпадает.
-            HStack(alignment: .top, spacing: TFSpacing.md) {
-            if let initials = model.assigneeInitials {
-                TFAvatar(size: .taskList, initials: initials, tint: model.assigneeColor ?? Color(hex: TFHexDefault.unassigned), userID: model.assigneeID)
-                    .padding(.top, model.projectName == nil ? 0 : 16)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                if let projectName = model.projectName {
-                    Text("#\(projectName)")
-                        .tfText(.caption)
-                        .foregroundStyle(model.projectColor ?? .tfSub)
+            TFTaskRowContent(title: model.title, description: model.description, isDone: model.isDone) {
+                if let initials = model.assigneeInitials {
+                    TFAvatar(size: .taskList, initials: initials, tint: model.assigneeColor ?? Color(hex: TFHexDefault.unassigned), userID: model.assigneeID)
                 }
-
-                HStack(spacing: TFSpacing.sm) {
-                    Text(model.title)
-                        .tfText(.body)
-                        .foregroundStyle(model.isDone ? Color.tfSub : Color.tfText)
-                        .strikethrough(model.isDone)
-                        .lineLimit(1)
+            } metadata: {
+                TFTaskStructureIndicators(priority: model.priority, subtasksDone: model.subtasksDone, subtasksTotal: model.subtasksTotal, childrenCount: model.childrenCount ?? 0, hasCollaborationPlan: model.hasCollaborationPlan)
+                if model.isOverdue {
+                    TFOverduePill()
+                } else if let due = model.dueText {
+                    TFDuePill(due)
                 }
-
-                if let description = model.description {
-                    Text(description)
-                        .tfText(.action)
-                        .foregroundStyle(Color.tfSub)
-                        .lineLimit(2)
-                }
-
                 if let status = model.agentStatus {
-                    Text(status)
-                        .tfText(.meta)
-                        .foregroundStyle(model.agentStatusColor ?? Color.tfTeal)
+                    Text(status).foregroundStyle(model.agentStatusColor ?? Color.tfTeal).layoutPriority(-1)
                 }
-
-                if hasBadges {
-                    HStack(spacing: TFSpacing.xs) {
-                        if let done = model.subtasksDone, let total = model.subtasksTotal {
-                            TFPill("\(done)/\(total)", color: .tfSub, solidBackground: .tfCard)
-                        }
-                        if let children = model.childrenCount, children > 0 {
-                            HStack(spacing: 2) {
-                                Image(systemName: "person.2")
-                                Text("\(children)")
-                            }
-                            .tfText(.caption)
-                            .foregroundStyle(Color.tfSub)
-                            .padding(.horizontal, TFSpacing.sm)
-                            .padding(.vertical, 2)
-                            .background(Color.tfCard)
-                            .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
-                        }
-                        if model.hasCollaborationPlan {
-                            TFAccentTag("ПЛАН", color: .tfPurple)
-                        }
-                        if model.isOverdue {
-                            TFOverduePill()
-                        } else if let due = model.dueText {
-                            TFDuePill(due)
-                        }
-                        ForEach(model.labels, id: \.title) { label in
-                            TFLabelPill(label.title, color: label.color)
-                        }
-                    }
+                if let project = model.projectName {
+                    Text("#\(project)").foregroundStyle(model.projectColor ?? .tfSub).layoutPriority(-1)
+                }
+                ForEach(model.labels, id: \.title) { label in
+                    TFLabelPill(label.title, color: label.color).layoutPriority(-1)
                 }
             }
-                Spacer(minLength: 0)
-                // Приоритет — стопкой шевронов у правого края (владелец
-                // 11.09.2026): сбоку он не толкает бейджи и целиком
-                // помещается по высоте строки. Рисуются все четыре уровня,
-                // прежнее «P4 не показываем» отменено.
-                if let priority = model.priority {
-                    TFPriorityArrows(priority)
-                }
-            }
-            .padding(.top, 9)
-            .padding(.bottom, 12)
-            .padding(.horizontal, TFSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
         .buttonStyle(TFTapRowStyle())
     }
+}
 
-    private var hasBadges: Bool {
-        model.subtasksTotal != nil || model.priority != nil
-            || model.isOverdue || model.dueText != nil || !model.labels.isEmpty
-            || (model.childrenCount ?? 0) > 0 || model.hasCollaborationPlan
+/// Общая геометрия всех списочных строк; действия и свайпы остаются у экранов.
+struct TFTaskRowContent<Avatar: View, Metadata: View>: View {
+    let title: String
+    let description: String?
+    let isDone: Bool
+    let horizontalPadding: CGFloat
+    let avatar: Avatar
+    let metadata: Metadata
+
+    init(title: String, description: String?, isDone: Bool, horizontalPadding: CGFloat = TFSpacing.lg, @ViewBuilder avatar: () -> Avatar, @ViewBuilder metadata: () -> Metadata) {
+        self.title = title
+        self.description = description
+        self.isDone = isDone
+        self.horizontalPadding = horizontalPadding
+        self.avatar = avatar()
+        self.metadata = metadata()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: TFSpacing.md) {
+            avatar
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .tfText(.body)
+                    .foregroundStyle(isDone ? Color.tfSub : Color.tfText)
+                    .strikethrough(isDone)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let description, !description.isEmpty {
+                    Text(description.components(separatedBy: .newlines).joined(separator: " "))
+                        .tfText(.action)
+                        .foregroundStyle(Color.tfSub)
+                        .lineLimit(1)
+                }
+                HStack(spacing: TFSpacing.xs) {
+                    metadata
+                }
+                .tfText(.caption)
+                .foregroundStyle(Color.tfSub)
+                .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 9)
+        .padding(.horizontal, horizontalPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Три типа структуры — в отдельных однотонных прямоугольных плашках.
+struct TFTaskStructureIndicators: View {
+    let priority: TaskPriority?
+    let subtasksDone: Int?
+    let subtasksTotal: Int?
+    let childrenCount: Int
+    let hasCollaborationPlan: Bool
+
+    var body: some View {
+        Group {
+            if let priority {
+                Image(systemName: "flag.fill")
+                    .foregroundStyle(priority.color)
+                    .accessibilityLabel("Приоритет: \(priority.label)")
+            }
+            if let done = subtasksDone, let total = subtasksTotal {
+                badge {
+                    HStack(spacing: 3) {
+                        Image(systemName: "checklist")
+                        Text("\(done)/\(total)")
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Подзадачи: \(done) из \(total)")
+            }
+            if hasCollaborationPlan {
+                badge {
+                    Image(systemName: "person.2")
+                }
+                .accessibilityLabel("План совместной работы")
+            }
+            if childrenCount > 0 {
+                badge {
+                    HStack(spacing: 3) {
+                        Image(systemName: "arrow.triangle.branch")
+                        Text("\(childrenCount)")
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Дочерние задачи: \(childrenCount)")
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(1)
+    }
+
+    private func badge<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, TFSpacing.sm)
+            .padding(.vertical, 2)
+            .background(Color.tfCard)
+            .clipShape(RoundedRectangle(cornerRadius: TFRadius.pill))
     }
 }
 

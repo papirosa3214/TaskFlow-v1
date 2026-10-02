@@ -189,6 +189,10 @@ struct RoleLiveItemsList: View {
 struct RoleLiveTurnBubble: View {
     let turn: RoleChatLiveTurn
     let showsName: Bool
+    var isComplete = false
+    var onPlaybackComplete: () -> Void = {}
+    @State private var completionReported = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var driver = RoleLivePacerDriver()
     @State private var visibleItems: [RoleChatLiveItem] = []
     @State private var fade = RoleTextFade()
@@ -201,7 +205,7 @@ struct RoleLiveTurnBubble: View {
                     .foregroundStyle(Color.tfSub)
             }
             if !visibleItems.isEmpty {
-                RoleLiveItemsList(items: visibleItems, fade: fade)
+                RoleLiveItemsList(items: visibleItems, fade: reduceMotion ? nil : fade)
             }
             // Сервер до 30.09.2026 шлёт только признак «думает» без текста.
             if turn.thinking != nil && turn.runningThinking == nil {
@@ -216,14 +220,18 @@ struct RoleLiveTurnBubble: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { ingest(turn.items) }
         .onChange(of: turn.items) { _, items in ingest(items) }
-        .task {
+        .task(id: isComplete) {
             // Часы очереди: ~60 раз в секунду, но экран перерисовывается
             // только когда показалось новое слово.
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(16))
+                do { try await Task.sleep(for: .milliseconds(16)) } catch { break }
                 if driver.tick() { publish() }
                 let animating = driver.isAnimating(now: .now)
                 if animating != fade.isAnimating { fade.isAnimating = animating }
+                if isComplete && !driver.pacer.hasPendingText && (reduceMotion || !animating) && !completionReported {
+                    completionReported = true
+                    onPlaybackComplete()
+                }
             }
         }
     }
@@ -245,7 +253,7 @@ struct RoleLiveTurnBubble: View {
 
     private func footer(now: Date) -> String {
         let steps = turn.items.filter(\.isStep).count
-        var parts = ["Работает"]
+        var parts = [isComplete ? "Ответ получен" : "Работает"]
         if let start = turn.startDate {
             parts.append(RoleLiveFormat.duration(seconds: Int(now.timeIntervalSince(start))))
         }
@@ -565,7 +573,7 @@ struct RoleTextFade: Equatable {
     /// Сколько символов текста идёт после этого куска.
     var offset = 0
 
-    static let duration: TimeInterval = 0.5
+    static let duration: TimeInterval = 0.25
 
     func shifted(by characters: Int) -> RoleTextFade {
         var copy = self
@@ -605,9 +613,6 @@ struct RoleRevealRenderer: TextRenderer {
                     guard opacity > 0.01 else { continue }
                     var copy = ctx
                     copy.opacity = opacity
-                    if opacity < 0.98 {
-                        copy.addFilter(.blur(radius: (1 - opacity) * 3))
-                    }
                     copy.draw(glyph)
                 }
             }

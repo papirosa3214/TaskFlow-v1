@@ -1001,7 +1001,7 @@ def t_project_tasks(args):
 
 def t_create_task(args):
     body = {"title": args["title"]}
-    for key in ("description", "project_id", "assignee_id", "due_date", "priority"):
+    for key in ("description", "project_id", "assignee_id", "due_date", "priority", "preparation"):
         if args.get(key) is not None:
             body[key] = args[key]
     if args.get("subtasks"):
@@ -1079,31 +1079,74 @@ def t_my_stats(args):
     return api("GET", "/api/tasks/my-stats")
 
 
-def t_structure_dictation(args):
-    """Причесать сырой/надиктованный текст в чистую задачу — тот же AI-мост,
-    что у владельца при голосовой диктовке (server/src/routes/ai.ts,
-    structureTask). Полезно, когда владелец в TaskFlow/Telegram накидал
-    задачу разговорным текстом, а оркестратору нужно ЧИСТОЕ title +
-    description + subtasks + due_date + priority, прежде чем заводить
-    задачи и раздавать их дальше.
+def t_consult(args):
+    """Второе мнение более сильной модели (владелец 01.10.2026: «как у
+    тебя — посовещаться с вышестоящей моделью»). В работе над задачей —
+    раз на попытку, с полным контекстом задачи и попыток; в чате — до трёх
+    раз в час."""
+    question = (args.get("question") or "").strip()
+    if not question:
+        raise TaskFlowError("question не может быть пустым")
+    body = {"question": question}
+    for key in ("context", "task_id", "subtask_id"):
+        if args.get(key):
+            body[key] = args[key]
+    resp = api("POST", "/api/consult", body)
+    return {"совет": resp.get("answer"), "модель": resp.get("model")}
 
-    Ничего не создаёт сам — возвращает разобранную структуру, дальше
-    taskflow_create_task с этими полями.
-    """
+
+def t_plan_request(args):
+    """Достроить живой план совместной работы из своего идущего шага
+    (владелец 01.10.2026): нужен ещё шаг — add_step, QA/критик нашёл
+    дефекты — rework. Сервер сам решает: в пределах лимита — сразу, сверх —
+    предложением владельцу."""
+    subtask_id = (args.get("subtask_id") or "").strip()
+    if not subtask_id:
+        raise TaskFlowError("subtask_id — твой шаг плана (он есть в задании)")
+    body = {k: args[k] for k in ("kind", "role", "expected_result", "instructions", "reason", "after", "before", "defects") if args.get(k) is not None}
+    resp = api("POST", f"/api/subtasks/{subtask_id}/plan-request", body)
+    result = resp.get("result", {})
+    status = result.get("status")
+    return {
+        "итог": "применено" if status == "applied" else "ждёт решения владельца" if status == "proposed" else status,
+        "почему ждёт": result.get("reason"),
+        "новые шаги": result.get("added"),
+        "план": resp.get("plan"),
+        "связи": resp.get("edges"),
+    }
+
+
+def t_weather(args):
+    """Погода для виджета в чате (владелец 01.10.2026). Данные отдаёт
+    сервер (Open-Meteo), роль их не придумывает: блок из поля «виджет»
+    вставляется в ответ как есть, клиент рисует из него карточку."""
+    city = (args.get("city") or "").strip()
+    if not city:
+        raise TaskFlowError("city не может быть пустым")
+    resp = api("GET", "/api/widgets/weather?" + urllib.parse.urlencode({"city": city}))
+    widget = json.dumps(resp.get("widget", {}), ensure_ascii=False)
+    return {
+        "виджет": f"```widget\n{widget}\n```",
+        "как использовать": "Вставь блок виджета в ответ как есть и добавь одну-две фразы от себя.",
+    }
+
+
+def t_structure_dictation(args):
+    """Тонкий клиент единой серверной подготовки: без записи и запуска."""
     text = (args.get("text") or "").strip()
     if not text:
         raise TaskFlowError("text не может быть пустым")
     body = {"text": text}
-    if args.get("provider"):
-        body["provider"] = args["provider"]
-    resp = api("POST", "/api/ai/structure-task", body)
-    return {
-        "название": resp.get("title"),
-        "описание": resp.get("description"),
-        "подзадачи": resp.get("subtasks", []),
-        "срок": resp.get("dueDate"),
-        "приоритет": resp.get("priority"),
-    }
+    for key in ("provider", "context", "source_record_id"):
+        if args.get(key) is not None:
+            body[key] = args[key]
+    result = api("POST", "/api/task-preparation/prepare", body)
+    card = result.get("card")
+    if not card:
+        return result
+    return {**result, "название": card["title"], "описание": card["description"],
+            "подзадачи": card["subtasks"], "срок": card["dueDate"], "приоритет": card["priority"],
+            "preparation": card.get("preparation")}
 
 
 # ---------------------------------------------------------------- инструменты исследователя
@@ -1759,7 +1802,7 @@ TOOLS = [
     },
     {
         "name": "taskflow_create_task",
-        "description": "Завести задачу. subtasks — список названий шагов.",
+        "description": "Завести задачу. Для плана ролей передай preparation и card.subtasks из taskflow_structure_dictation; план сохраняется черновиком без запуска.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1769,6 +1812,7 @@ TOOLS = [
                 "assignee_id": {"type": "string"},
                 "due_date": {"type": "string", "description": "ГГГГ-ММ-ДД"},
                 "priority": {"type": "integer", "description": "1 срочный … 4 низкий"},
+                "preparation": {"type": "object", "description": "Контракт из taskflow_structure_dictation; сохраняет план ролей внутри карточки без запуска"},
                 "subtasks": {"type": "array", "items": {"type": "string"}},
             },
             "required": ["title"],
@@ -1800,22 +1844,89 @@ TOOLS = [
     {
         "name": "taskflow_structure_dictation",
         "description": (
-            "Причесать сырой/надиктованный текст в чистую задачу тем же "
-            "AI-мостом, что у владельца при голосовой диктовке: вернёт "
-            "title, description, subtasks, due_date, priority. Полезно, "
-            "когда задание пришло разговорным текстом (из чата, транскрипта, "
-            "заметки) и нужна структура ПЕРЕД тем, как заводить задачи и "
-            "раздавать их. Ничего не создаёт сам."
+            "Единая серверная подготовка поручения: intent, card и preparation "
+            "с результатами, ролями и зависимостями. Ничего не создаёт и не запускает. "
+            "card=null — вопрос/уточнение, карточку не заводить. Для role_plan передай "
+            "preparation и card.subtasks в taskflow_create_task; это одна карточка с планом ролей."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "text": {"type": "string"},
+                "context": {"type": "string"},
+                "source_record_id": {"type": "string"},
                 "provider": {"type": "string", "description": "local | claude | hermes | deepseek | antigravity — необязательно"},
             },
             "required": ["text"],
         },
         "fn": t_structure_dictation,
+    },
+    {
+        "name": "taskflow_consult",
+        "description": (
+            "Посоветоваться с более сильной моделью, когда сомневаешься: перед "
+            "важным или необратимым решением (архитектура, миграция, удаление), "
+            "когда застрял после двух неудачных попыток, когда требования "
+            "противоречат друг другу. Сформулируй конкретный вопрос и приложи в "
+            "context то, что уже выяснил (варианты, ошибки, ограничения). В работе "
+            "над задачей — один раз на попытку, в чате — до трёх раз в час. Совет — "
+            "не приказ: решение и ответственность остаются на тебе."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "Конкретный вопрос"},
+                "context": {"type": "object", "description": "Что уже известно: варианты, ошибки, выдержки"},
+                "task_id": {"type": "string", "description": "Задача, над которой работаешь (если есть)"},
+                "subtask_id": {"type": "string", "description": "Твой шаг плана (если работаешь по плану)"},
+            },
+            "required": ["question"],
+        },
+        "fn": t_consult,
+    },
+    {
+        "name": "taskflow_plan_request",
+        "description": (
+            "Достроить план совместной работы из своего идущего шага. "
+            "kind=add_step — нужен ещё шаг другой роли (role, expected_result, reason; "
+            "after/before — slot_key шагов, по умолчанию после твоего). kind=rework — "
+            "только QA/критик: отправить на доработку (defects — что исправить, role — "
+            "кому, по умолчанию builder); после доработки встанет повторная проверка. "
+            "Не делай чужую работу и не закрывай чужой шаг — попроси шаг здесь."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "subtask_id": {"type": "string", "description": "Твой шаг плана (id из задания)"},
+                "kind": {"type": "string", "description": "add_step | rework"},
+                "role": {"type": "string", "description": "Роль нового шага: researcher, analyst, architect, designer, builder, qa, critic_verifier"},
+                "expected_result": {"type": "string", "description": "Что должна сдать роль"},
+                "instructions": {"type": "string", "description": "Подробное задание"},
+                "reason": {"type": "string", "description": "Зачем шаг нужен — увидит владелец"},
+                "after": {"type": "array", "items": {"type": "string"}, "description": "После каких шагов (slot_key)"},
+                "before": {"type": "array", "items": {"type": "string"}, "description": "Каких ещё не начатых шагов он должен быть раньше"},
+                "defects": {"type": "string", "description": "Для rework: конкретные дефекты"},
+            },
+            "required": ["subtask_id", "kind", "reason"],
+        },
+        "fn": t_plan_request,
+    },
+    {
+        "name": "taskflow_weather",
+        "description": (
+            "Погода сейчас и на 4 дня для города — готовый блок виджета для "
+            "ответа в чате. Звать на любой вопрос о погоде; блок из поля "
+            "«виджет» вставить в ответ как есть, цифры не пересказывать и не "
+            "выдумывать."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "Город, например «Москва»"},
+            },
+            "required": ["city"],
+        },
+        "fn": t_weather,
     },
     {
         "name": "taskflow_my_stats",

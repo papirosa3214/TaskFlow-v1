@@ -1,0 +1,43 @@
+{
+  "created": 6,
+  "updated": 0,
+  "conflicts": [],
+  "task_ids": [
+    {
+      "source_id": "73c28b43-a60f-4636-aaaf-d6b07c0898d5",
+      "task_id": "11e72477-6241-4506-84be-fac3a5a2750d",
+      "title": "Выпустить авторизацию",
+      "draft_plan_id": "tcp_9b372391-cd15-44c3-a000-7f3f812dce2a"
+    },
+    {
+      "source_id": "49183406-a85a-4af1-8908-da9b1f25d169",
+      "task_id": "b30c22e1-7c68-45d3-986f-b821c283bbf6",
+      "title": "Исследовать варианты авторизации",
+      "draft_plan_id": "tcp_0cd9fbac-deb1-4c87-9ea0-de88edb846ef"
+    },
+    {
+      "source_id": "8fea4aa6-841b-463f-8d4a-4a3113aa6bb2",
+      "task_id": "6ca26c5f-a1b8-4607-89e1-2d97a15ad7ac",
+      "title": "Реализовать API авторизации",
+      "draft_plan_id": "tcp_570274d6-79d6-468d-9d75-4803b7a59d25"
+    },
+    {
+      "source_id": "8cbf8830-8a86-4343-8449-87d507baf826",
+      "task_id": "cd37f077-b94e-4e24-84b7-74eeee699aa4",
+      "title": "Собрать экран входа",
+      "draft_plan_id": "tcp_b451c85a-444c-4d95-bfd6-6908ed8c3c1d"
+    },
+    {
+      "source_id": "211bb35b-7bc7-40b6-91a7-1aa1fb32ea13",
+      "task_id": "62bf4fd4-de70-4b10-b8a2-e83c8ef09f58",
+      "title": "Проверить сценарии входа",
+      "draft_plan_id": "tcp_2b38ba86-7643-40e4-a631-165c72167388"
+    },
+    {
+      "source_id": "7548553b-a741-4d9f-a4ce-1f145ee74f44",
+      "task_id": "d932db19-72d4-419f-b1cd-a86c3b578616",
+      "title": "Подготовить инструкцию пользователю",
+      "draft_plan_id": "tcp_75fa23b8-f751-4a7c-aacb-db55aa3a1b57"
+    }
+  ]
+}

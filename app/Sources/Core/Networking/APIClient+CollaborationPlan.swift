@@ -76,4 +76,30 @@ public extension APIClient {
         if let plan = envelope.plan { return .suggested(plan) }
         return .notSuggested(reason: envelope.reason ?? "Параллелить нечего.")
     }
+
+    /// Правка живого плана (01.10.2026) — черновика или уже запущенного.
+    /// `baseVersion` — версия, которую видел владелец: не совпала — сервер
+    /// отвечает 409, и экран перечитывает план, не теряя введённого.
+    @discardableResult
+    func applyCollaborationPlanOps(taskId: String, planId: String, baseVersion: Int?, ops: [ApiPlanOp],
+                                   reason: String? = nil) async throws -> ApiCollaborationPlan {
+        struct Body: Encodable { let base_version: Int?; let ops: [ApiPlanOp]; let reason: String? }
+        let envelope: CollaborationPlanEnvelope = try await request(
+            .post,
+            "/tasks/\(taskId)/collaboration-plans/\(planId)/ops",
+            body: Body(base_version: baseVersion, ops: ops, reason: reason)
+        )
+        return envelope.plan
+    }
+
+    /// Решение владельца по предложению роли сверх лимита.
+    @discardableResult
+    func decideCollaborationPlanProposal(taskId: String, planId: String, proposalId: String,
+                                         approve: Bool) async throws -> ApiCollaborationPlan {
+        let envelope: CollaborationPlanEnvelope = try await request(
+            .post,
+            "/tasks/\(taskId)/collaboration-plans/\(planId)/proposals/\(proposalId)/\(approve ? "approve" : "reject")"
+        )
+        return envelope.plan
+    }
 }

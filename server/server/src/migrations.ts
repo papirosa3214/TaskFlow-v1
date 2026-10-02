@@ -2719,6 +2719,125 @@ const migrations: Migration[] = [
       }
     },
   },
+  {
+    // Живой план совместной работы (владелец 01.10.2026): план правится и
+    // после утверждения — владелец меняет неначатые шаги, роли сами
+    // достраивают граф в пределах лимитов, QA/критик отправляют на
+    // доработку. Правки — на месте (узлы остаются подзадачами того же
+    // плана), история — в журнале task_collaboration_plan_ops, version —
+    // для проверки конкурентных правок.
+    id: "082_live_collaboration_plan",
+    description:
+      "Живой план: version плана, происхождение/пропуск/итерация узла, журнал правок task_collaboration_plan_ops.",
+    up: () => {
+      const cols = (table: string) =>
+        new Set(
+          (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name),
+        );
+      const plans = cols("task_collaboration_plans");
+      if (!plans.has("version")) {
+        db.exec("ALTER TABLE task_collaboration_plans ADD COLUMN version INTEGER NOT NULL DEFAULT 1");
+      }
+      const nodes = cols("task_collaboration_plan_nodes");
+      const add = (name: string, ddl: string) => {
+        if (!nodes.has(name)) db.exec(`ALTER TABLE task_collaboration_plan_nodes ADD COLUMN ${name} ${ddl}`);
+      };
+      add("instructions", "TEXT");
+      add("origin", "TEXT NOT NULL DEFAULT 'template'");
+      add("added_by", "TEXT");
+      add("added_reason", "TEXT");
+      add("iteration", "INTEGER NOT NULL DEFAULT 0");
+      add("rework_of_key", "TEXT");
+      add("skipped_at", "TEXT");
+      add("skip_reason", "TEXT");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS task_collaboration_plan_ops (
+          id TEXT PRIMARY KEY,
+          plan_id TEXT NOT NULL REFERENCES task_collaboration_plans(id) ON DELETE CASCADE,
+          base_version INTEGER,
+          applied_version INTEGER,
+          actor_id TEXT,
+          actor_kind TEXT NOT NULL CHECK (actor_kind IN ('owner','role','system')),
+          ops_json TEXT NOT NULL,
+          status TEXT NOT NULL CHECK (status IN ('proposed','applied','rejected')),
+          reason TEXT,
+          decided_by TEXT,
+          decided_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_plan_ops_plan ON task_collaboration_plan_ops(plan_id, created_at);
+      `);
+    },
+  },
+  {
+    id: "083_chat_work_mode",
+    description: "Режим сообщения чата: работа, планирование, глубокое исследование.",
+    up: () => {
+      const cols = db.prepare("PRAGMA table_info(chat_messages)").all() as Array<{name: string}>;
+      if (!cols.some(c => c.name === "work_mode")) {
+        db.exec("ALTER TABLE chat_messages ADD COLUMN work_mode TEXT NOT NULL DEFAULT 'work' CHECK(work_mode IN ('work','plan','deep_research'))");
+      }
+    },
+  },
+
+  {
+    id: "084_role_composio",
+    description: "Composio: подключение и наборы инструментов по ролям, без секретов в БД.",
+    up: () => db.exec(`CREATE TABLE IF NOT EXISTS role_composio (
+      role TEXT PRIMARY KEY REFERENCES roles(key) ON DELETE CASCADE,
+      owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+      toolkits TEXT
+    )`),
+  },
+  {
+    id: "085_linear_import",
+    description: "Linear: mappings, reviewed snapshots and source history without changing task semantics.",
+    up: () => db.exec(`
+      CREATE TABLE IF NOT EXISTS linear_import_tasks (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        task_id TEXT NOT NULL UNIQUE REFERENCES tasks(id) ON DELETE CASCADE,
+        source_url TEXT NOT NULL,
+        snapshot TEXT NOT NULL,
+        applied_fields TEXT NOT NULL,
+        imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY(owner_id,workspace_id,source_id)
+      );
+      CREATE TABLE IF NOT EXISTS linear_import_objects (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL,
+        source_issue_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        local_id TEXT,
+        applied_text TEXT,
+        snapshot TEXT NOT NULL,
+        PRIMARY KEY(owner_id,workspace_id,source_issue_id,kind,source_id)
+      );
+      CREATE TABLE IF NOT EXISTS linear_import_relations (
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        workspace_id TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        source_issue_id TEXT NOT NULL,
+        target_issue_id TEXT NOT NULL,
+        relation_type TEXT NOT NULL,
+        managed_edge INTEGER NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        snapshot TEXT NOT NULL,
+        PRIMARY KEY(owner_id,workspace_id,source_id)
+      );
+      CREATE TABLE IF NOT EXISTS linear_import_previews (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        snapshot TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        result TEXT
+      );
+    `),
+  },
+
 ];
 
 /**

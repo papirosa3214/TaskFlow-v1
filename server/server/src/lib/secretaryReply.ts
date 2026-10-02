@@ -1,3 +1,4 @@
+import { type ChatWorkMode } from "../runtime/chatWorkMode.js";
 import { renderInstruction } from "./roleContextResolver.js";
 // «Супер Секретарь» (владелец 25.09.2026, docs/ПЛАН Супер Секретарь/):
 // настоящий ИИ-ответ в комнате `chat-secretary` — по образцу
@@ -22,6 +23,7 @@ import {
   startLiveTurn,
   type SavedSteps,
 } from "../runtime/chatLiveTurn.js";
+import { loadChatMessage } from "./chatMessages.js";
 
 import { mayRequestSummary, parseSummaryRequest, collectTaskSummary, sendSummaryToSecretaryChat } from "./secretaryTaskSummary.js";
 
@@ -30,6 +32,7 @@ const uid = () => crypto.randomUUID();
 export const SECRETARY_CHAT_ID = "chat-secretary";
 const SECRETARY_ROLE = "secretary";
 const SECRETARY_ID = "u-secretary";
+export const SECRETARY_USER_ID = SECRETARY_ID;
 const CONTEXT_MESSAGES = 20;
 
 /// Быстрые ответы (владелец 25.09.2026, docs/ПЛАН Супер Секретарь/): модель
@@ -60,7 +63,7 @@ function memberIds(chatId: string): string[] {
   ).map((r) => r.member_id);
 }
 
-export async function deliverSecretaryReply(userText: string): Promise<string | null> {
+export async function deliverSecretaryReply(userText: string, mode: ChatWorkMode = "work"): Promise<string | null> {
   const chatId = SECRETARY_CHAT_ID;
   // Сводка использует тот же серверный разбор и факты, что голосовой инструмент.
   // Свободный разговор продолжает существующую сессию роли.
@@ -82,7 +85,7 @@ export async function deliverSecretaryReply(userText: string): Promise<string | 
          FROM chat_messages m
          LEFT JOIN users f ON f.id = m.from_user_id
         WHERE m.chat_id = ?
-        ORDER BY m.created_at DESC LIMIT ?`,
+        ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`,
     )
     .all(chatId, CONTEXT_MESSAGES) as Array<{
     from_user_id: string;
@@ -132,6 +135,7 @@ export async function deliverSecretaryReply(userText: string): Promise<string | 
   typing(true);
   try {
     reply = await startChatRun({
+      mode,
       chatId,
       role: SECRETARY_ROLE,
       roleId: SECRETARY_ID,
@@ -147,17 +151,24 @@ export async function deliverSecretaryReply(userText: string): Promise<string | 
       error instanceof Error ? error.message : error,
     );
     failure = error;
-  } finally {
-    steps = live.finish();
-    typing(false);
   }
+  // «Ход закончен» разошлём после готового сообщения — см. deliverAgentReply.
+  const partial = live.partialText();
+  steps = live.finish({ deferAnnounce: true });
 
   if (reply?.sessionId) upsertChatSession(chatId, SECRETARY_ID, reply.sessionId);
 
-  const rawReplyText = failure
-    ? chatRunFailureText(failure)
-    : (reply?.text || "").trim();
-  if (!rawReplyText) return null;
+  const cancelled = (failure as { code?: string } | null)?.code === "CHAT_RUN_CANCELLED";
+  const rawReplyText = cancelled && partial
+    ? `${partial}\n\n_Остановлено._`
+    : failure
+      ? chatRunFailureText(failure)
+      : (reply?.text || "").trim();
+  if (!rawReplyText) {
+    live.announceEnd(null);
+    typing(false);
+    return null;
+  }
   const { clean: replyText, replies: quickReplies } = failure
     ? { clean: rawReplyText, replies: null }
     : extractQuickReplies(rawReplyText);
@@ -191,16 +202,8 @@ export async function deliverSecretaryReply(userText: string): Promise<string | 
   );
   db.prepare("UPDATE chats SET updated_at = datetime('now') WHERE id = ?").run(chatId);
 
-  const replyRow = db
-    .prepare(
-      `SELECT m.*, f.name as from_user_name, f.avatar_color as from_user_color,
-              f.avatar_url as from_user_avatar_url, f.initials as from_user_initials
-         FROM chat_messages m
-         LEFT JOIN users f ON f.id = m.from_user_id
-        WHERE m.id = ?`,
-    )
-    .get(replyId);
-
-  broadcastToUsers(memberIds(chatId), { type: "chat:new", message: replyRow });
+  broadcastToUsers(memberIds(chatId), { type: "chat:new", message: loadChatMessage(replyId) });
+  live.announceEnd(replyId);
+  typing(false);
   return replyId;
 }

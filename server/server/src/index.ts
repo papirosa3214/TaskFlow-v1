@@ -41,6 +41,7 @@ import { registerStructureRoutes } from "./routes/structure.js";
 import { registerReportRoutes } from "./routes/reports.js";
 import { registerResearchRoutes } from "./routes/research.js";
 import { registerChatsRoutes } from "./routes/chats.js";
+import { registerWidgetsRoutes } from "./routes/widgets.js";
 import { registerTranscribeRoutes } from "./routes/transcribe.js";
 import { registerCompassRoutes } from "./routes/compass.js";
 import { registerDictationArchiveRoutes } from "./routes/dictation-archive.js";
@@ -71,6 +72,8 @@ import { registerRoleRunJobRoutes } from "./routes/role-run-jobs.js";
 import { registerTaskCollaborationPlanRoutes } from "./routes/task-collaboration-plans.js";
 import { registerSubtaskArtifactRoutes } from "./routes/subtask-artifacts.js";
 import { registerRuntimeContextRoutes } from "./routes/runtime-context.js";
+import { registerLinearRoutes } from "./routes/linear.js";
+import { registerComposioRoutes } from "./routes/composio.js";
 
 /**
  * Собирает и возвращает готовый Fastify-инстанс — регистрирует плагины,
@@ -340,6 +343,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerSubtaskCommentRoutes(app);
   registerSubtaskArtifactRoutes(app);
   registerRuntimeContextRoutes(app);
+  registerComposioRoutes(app);
+  registerLinearRoutes(app);
   registerNotificationRoutes(app);
   registerLiveActivityRoutes(app);
   registerSearchRoutes(app);
@@ -351,6 +356,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerReportRoutes(app);
   registerResearchRoutes(app);
   registerChatsRoutes(app);
+  registerWidgetsRoutes(app);
   registerTranscribeRoutes(app);
   // Архив диктовок (18.08.2026): аудио выгружается с телефона и хранится
   // бессрочно — прямое решение владельца.

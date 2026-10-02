@@ -1,4 +1,7 @@
+import { PLANNING_TOOLS, type ChatWorkMode } from "./chatWorkMode.js";
+import { composioCommand, roleComposioPolicy } from "./composioPolicy.js";
 import { instructionResources } from "./instructionResources.js";
+import { ensureRoleHome } from "./roleHome.js";
 import { composeLayer, LAYER_CATALOG, instructionManifest } from "../lib/roleContextResolver.js";
 import fs from "node:fs";
 import os from "node:os";
@@ -28,7 +31,6 @@ export function setRoleTokenSigner(fn: Signer): void {
 
 const PROFILES_DIR = path.join(os.homedir(), ".pi", "agent", "taskflow-profiles");
 const RUNS_DIR = process.env.TASKFLOW_RUNS_DIR || path.join(os.tmpdir(), "taskflow-runs");
-const MCP_SERVER = path.join(process.cwd(), "scripts", "mcp_server.py");
 const DEFAULT_TOOLS = "taskflow_my_tasks,taskflow_task,taskflow_claim,taskflow_heartbeat,taskflow_state,taskflow_comment,taskflow_subtask_done,taskflow_subtask_add,taskflow_rules,taskflow_status,taskflow_agents,taskflow_chat_send,taskflow_chat_typing,taskflow_chat_read,taskflow_subtask_work,taskflow_projects,taskflow_project_tasks,taskflow_create_project,taskflow_create_task,taskflow_suggest_subtasks,taskflow_structure_dictation,taskflow_my_stats,taskflow_docs,taskflow_doc_read,taskflow_doc_write,taskflow_kb_search,taskflow_runtime";
 
 /** Набор инструментов роли — из её прежнего профиля, если он есть; у новой
@@ -39,17 +41,28 @@ function roleTools(role: string): string {
       fs.readFileSync(path.join(PROFILES_DIR, `${role}.json`), "utf8"),
     ) as { mcpServers?: { taskflow?: { env?: Record<string, string> } } };
     const tools = profile.mcpServers?.taskflow?.env?.TASKFLOW_MCP_TOOLS;
-    if (tools && tools.trim()) return tools;
+    if (tools && tools.trim()) return withChatTools(tools);
   } catch {
     // профиля нет — новая роль
   }
-  return DEFAULT_TOOLS;
+  return withChatTools(DEFAULT_TOOLS);
+}
+
+/** Инструменты для ответов в чате — есть у каждой роли, даже если её
+ *  профиль задаёт свой список: без них виджет погоды пришлось бы
+ *  выдумывать (владелец 01.10.2026). */
+const CHAT_TOOLS = ["taskflow_weather", "taskflow_plan_request", "taskflow_consult"];
+
+function withChatTools(list: string): string {
+  const names = list.split(",").map((n) => n.trim()).filter(Boolean);
+  for (const tool of CHAT_TOOLS) if (!names.includes(tool)) names.push(tool);
+  return names.join(",");
 }
 
 /** Выдать запуску доступ роли. Возвращает путь к временному файлу
  *  подключения для `pi --mcp-config`; null — роль не из списка или
  *  подпись ещё не подключена (тогда запуск идёт без инструментов трекера). */
-export function prepareRoleRunAccess(runId: string, role: string): string | null {
+export function prepareRoleRunAccess(runId: string, role: string, mode: ChatWorkMode = "work", context = runId): string | null {
   if (!signer || !ROLE_NAMES.includes(role)) return null;
   const token = signer({ id: roleUserId(role) }, { expiresIn: "12h" });
   fs.mkdirSync(RUNS_DIR, { recursive: true, mode: 0o700 });
@@ -57,16 +70,18 @@ export function prepareRoleRunAccess(runId: string, role: string): string | null
   instructionResources();
   const snapshot = file + ".instructions.json";
   fs.writeFileSync(snapshot, JSON.stringify({role,manifest:instructionManifest(role,"chat"),texts:Object.fromEntries(LAYER_CATALOG.filter(s=>s.key.startsWith("tool.mcp.")||s.key==="mcp.initialize").map(s=>[s.key,composeLayer(role,s.key)!.effective]))}),{mode:0o600});
+  const policy = roleComposioPolicy(role);
   const config = {
     mcpServers: {
+      ...(policy.enabled ? { composio: { ...composioCommand(policy, mode, context), directTools: true, toolPrefix: "server" } } : {}),
       taskflow: {
         command: "/usr/bin/python3",
-        args: [MCP_SERVER],
+        args: [path.join(ensureRoleHome(role).scripts, "mcp_server.py")],
         env: {
           TASKFLOW_TOKEN: token,
           TASKFLOW_MCP_ROLE: role,
           TASKFLOW_INSTRUCTION_SNAPSHOT: snapshot,
-          TASKFLOW_MCP_TOOLS: roleTools(role),
+          TASKFLOW_MCP_TOOLS: mode === "plan" ? roleTools(role).split(",").filter(t => PLANNING_TOOLS.includes(t)).join(",") : roleTools(role),
         },
         directTools: true,
       },
