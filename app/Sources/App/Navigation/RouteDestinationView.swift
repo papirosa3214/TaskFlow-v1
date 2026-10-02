@@ -87,6 +87,8 @@ private func routeContent(_ route: AppRoute) -> some View {
         AgentsScreen()
     case .roleRunJobs:
         RoleRunJobsScreen()
+    case .memory:
+        MemoryScreen()
     case .agentWork(let focus):
         AgentWorkScreen(focus: focus)
     case .settings:

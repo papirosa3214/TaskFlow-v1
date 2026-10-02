@@ -30,6 +30,7 @@ struct AgentsScreen: View {
 
                 if viewModel.isOwner {
                     runJobsEntry
+                    memoryEntry
                 }
                 enabledSection
                 if !viewModel.disabledProfiles.isEmpty {
@@ -101,6 +102,27 @@ struct AgentsScreen: View {
                 )
             }
             .buttonStyle(.plain)
+        }
+        .padding(.horizontal, TFSpacing.screenHorizontal)
+    }
+
+    /// Вход в память ролей (02.10.2026): что роли запомнили, файлы,
+    /// правка и закрепление — только владельцу.
+    private var memoryEntry: some View {
+        TFCard(padding: 0) {
+            NavigationLink(value: AppRoute.memory) {
+                TFListRow(
+                    icon: "brain", iconStyle: .plain, title: "Память команды",
+                    trailing: AnyView(
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Color.tfDim)
+                    ),
+                    titleStyle: .action, verticalPadding: TFSpacing.xs
+                )
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("memory-entry")
         }
         .padding(.horizontal, TFSpacing.screenHorizontal)
     }
