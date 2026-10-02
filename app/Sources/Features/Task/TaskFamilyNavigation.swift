@@ -41,21 +41,12 @@ struct TaskFormScreen: View {
                     initialExpandedSections: expandedSections(for: model),
                     onExpandedSectionsChanged: { storeExpandedSections($0, for: model) })
                     .id(selectedCardID ?? "new")
-                    // Плавность (02.10.2026): размытие и прозрачность всей
-                    // карточки перерисовывали её целиком на каждом кадре —
-                    // вместо них лёгкое отступание вглубь и вуали поверх.
-                    .scaleEffect(reduceMotion ? 1 : 1 - 0.045 * pullProgress(width: geometry.size.width))
+                    .blur(radius: reduceMotion ? 0 : 3.2 * pullProgress(width: geometry.size.width))
+                    .opacity(reduceMotion ? 1 : 1 - 0.14 * latePullProgress(width: geometry.size.width))
                     .overlay {
                         if pull > 0 {
                             Color.tfCard2
                                 .opacity((reduceMotion ? 0.06 : 0.16) * pullProgress(width: geometry.size.width))
-                                .allowsHitTesting(false)
-                        }
-                    }
-                    .overlay {
-                        if pull > 0, !reduceMotion {
-                            Color.tfBackground
-                                .opacity(0.14 * latePullProgress(width: geometry.size.width))
                                 .allowsHitTesting(false)
                         }
                     }
@@ -72,19 +63,8 @@ struct TaskFormScreen: View {
                         preview: true)
                         .background(Color.tfBackground.ignoresSafeArea())
                         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14))
-                        // Плавность (02.10.2026): две тени от всего содержимого
-                        // считались каждый кадр — вместо них мягкая широкая
-                        // градиентная полоса у кромки (плотная узкая — ниже).
-                        .overlay(alignment: .leading) {
-                            LinearGradient(
-                                colors: [.clear, Color.black.opacity(0.1), Color.black.opacity(0.22)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                            .frame(width: 120)
-                            .offset(x: -120)
-                            .allowsHitTesting(false)
-                        }
+                        .shadow(color: Color.black.opacity(0.52), radius: 10, x: -7)
+                        .shadow(color: Color.black.opacity(0.3), radius: 30, x: -18)
                         .overlay(alignment: .leading) {
                             LinearGradient(
                                 colors: [.clear, Color.black.opacity(0.18), Color.black.opacity(0.46)],
